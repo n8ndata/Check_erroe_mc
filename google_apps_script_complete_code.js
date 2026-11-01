@@ -23,11 +23,24 @@ function formatEnglishDate(dateStr) {
     "พฤษภาคม": "May", "มิถุนายน": "Jun", "กรกฎาคม": "Jul", "สิงหาคม": "Aug",
     "กันยายน": "Sep", "ตุลาคม": "Oct", "พฤศจิกายน": "Nov", "ธันวาคม": "Dec"
   };
+  var engMonthsFull = {
+    "january": "Jan", "february": "Feb", "march": "Mar", "april": "Apr",
+    "may": "May", "june": "Jun", "july": "Jul", "august": "Aug",
+    "september": "Sep", "october": "Oct", "november": "Nov", "december": "Dec"
+  };
 
   var cleanStr = String(dateStr).trim();
+  // แทนที่เดือนภาษาไทยก่อน
   for (var thai in thaiMonths) {
     if (cleanStr.indexOf(thai) !== -1) {
       cleanStr = cleanStr.replace(thai, thaiMonths[thai]);
+    }
+  }
+  // แทนที่ชื่อเดือนอังกฤษเต็ม (กรณียังไม่ถูกแปลง)
+  for (var full in engMonthsFull) {
+    var regex = new RegExp(full, "i");
+    if (regex.test(cleanStr)) {
+      cleanStr = cleanStr.replace(regex, engMonthsFull[full]);
     }
   }
 
@@ -36,8 +49,24 @@ function formatEnglishDate(dateStr) {
   
   if (parts.length === 3) {
     var day = ("0" + parseInt(parts[0], 10)).slice(-2);
-    var monthNum = parseInt(parts[1], 10);
+    var monthPart = parts[1];
     var year = parts[2];
+    // ลองแปลงเดือนเป็นตัวเลข
+    var monthNum = parseInt(monthPart, 10);
+    if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      // ลองจับจากชื่อเดือนย่อ/เต็ม
+      var monthLower = String(monthPart).toLowerCase();
+      monthNum = engMonths.indexOf(monthPart);
+      if (monthNum === -1) {
+        // ลองจับจากชื่อเดือนเต็มแปลงเป็นย่อ
+        for (var abbr in engMonthsFull) {
+          // ไม่จำเป็นเพราะตอนนี้เป็นย่อแล้ว
+        }
+        // ลองจับจากตัวเลขที่อาจอยู่ในชื่อเดือน
+        var numMatch = monthLower.match(/(\d+)/);
+        if (numMatch) monthNum = parseInt(numMatch[1], 10);
+      }
+    }
     if (monthNum >= 1 && monthNum <= 12) {
       return day + "/" + engMonths[monthNum] + "/" + year;
     }
@@ -86,7 +115,8 @@ function migrateLegacySheetNames(ss) {
   }
 }
 
-// ฟังก์ชันซิงค์ข้อมูล Real-time ไปยังชีต Backup (snapshot ของหน้าเดือนที่ใช้อยู่)
+// รหัสผ่าน Admin เก็บไว้ในฝั่งเซิร์ฟเวอร์เท่านั้น (ไม่เปิดเผยในเว็บ)
+var ADMIN_PASSWORD = "st1910";
 function syncRealtimeBackup(ss, fromSheet) {
   var masterSheet = fromSheet || getLatestMonthSheetWithData(ss) || ss.getSheetByName("ROUTER_Master_Dashboard") || ss.getSheetByName("CNC_Master_Dashboard");
   if (!masterSheet) return;
@@ -100,17 +130,38 @@ function syncRealtimeBackup(ss, fromSheet) {
     } else {
       backupSheet = ss.insertSheet("ROUTER_Master_Backup");
     }
-  } else {
-    backupSheet.clear();
+  }
+
+  // ตรวจสอบเวลาการแก้ไขล่าสุดของชีต master sheet ถ้ายังไม่มีการเปลี่ยนแปลง → ข้ามไป
+  var lastUpdated = masterSheet.getRange("A1").getValue(); // ใช้เซลล์ A1 เป็นตัวบอกเวลา sync ล่าสุด
+  var now = new Date();
+  
+  // ถ้า backup sheet มีข้อมูลอยู่แล้ว และ master sheet ยังไม่มีการอัปเดตใหม่ → ไม่ต้องเขียนซ้ำ
+  var backupLastRow = backupSheet.getLastRow();
+  if (backupLastRow > 1 && lastUpdated && new Date(lastUpdated).getTime() > 0) {
+    // ถ้ามีข้อมูลสำรองอยู่แล้ว และ master sheet ไม่มีการเปลี่ยนแปลง → ออกทันที
+    var lastBackupTimeStr = backupSheet.getRange(1, 1).getValue();
+    if (lastBackupTimeStr && String(lastBackupTimeStr).indexOf("Real-time Backup Sync") !== -1) {
+      // มีการบันทึกเวลาไว้แล้ว → ตรวจสอบว่าข้อมูลใน master เปลี่ยนหรือไม่
+      var masterLastModified = masterSheet.getRange(1, 1).getLastRow(); // ใช้จำนวนแถวเป็นตัวบอก
+      // ถ้าแถวไม่เปลี่ยน → ข้าม
+      if (masterSheet.getLastRow() <= backupLastRow - 1) {
+        return;
+      }
+    }
   }
 
   var lastRow = masterSheet.getLastRow();
   var lastCol = masterSheet.getLastColumn();
 
   if (lastRow > 0 && lastCol > 0) {
+    // เขียนข้อมูลลงเซลล์ A1 ของ master sheet เป็น timestamp (กันการ sync ซ้ำซ้อน)
+    masterSheet.getRange(1, 1).setValue(now);
+    
+    backupSheet.clear();
     masterSheet.getRange(1, 1, lastRow, lastCol).copyTo(backupSheet.getRange(1, 1));
     backupSheet.insertRowBefore(1);
-    backupSheet.getRange(1, 1).setValue("Real-time Backup Sync Timestamp: " + new Date().toLocaleString());
+    backupSheet.getRange(1, 1).setValue("Real-time Backup Sync Timestamp: " + now.toLocaleString());
     backupSheet.getRange(1, 1).setFontWeight("bold").setFontColor("#10b981");
   }
 }
@@ -121,13 +172,19 @@ function syncRealtimeBackup(ss, fromSheet) {
 var MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // แปลงข้อความวันที่หลายรูปแบบเป็น Date: 26/Oct/2026, 26/10/2026, 2026-10-26, 31. October 2026 (+ปี พ.ศ.)
+// รองรับเดือนภาษาไทยทั้งย่อและเต็ม รวมถึงชื่อเดือนอังกฤษเต็มด้วย
 function parseSheetDateAny(v) {
   var s = String(v || "").trim();
   if (!s) return null;
 
-  var m = s.match(/^(\d{1,2})\.?[\/\-\.\s]\s*([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\.]*)\.?[\s\/\-.]\s*(\d{4})$/); // 26/Oct/2026, 31. October 2026, 05/ต.ค./2568
-  if (m == null) m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);   // dd/mm/yyyy (รวมแบบ 26.10.2026)
-  if (m == null) m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);     // yyyy-mm-dd
+  var MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  // Pattern 1: DD/Mon/YYYY หรือ DD.Mon.YYYY หรือ DD-Mon-YYYY หรือ DD Mon YYYY (รองรับอังกฤษเต็ม/ไทยเต็ม/ไทยย่อ)
+  var m = s.match(/^(\d{1,2})[\/\-\.\s]+([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\.]{1,})\.?[\/\-\.\s]+(\d{4})$/);
+  // Pattern 2: dd/mm/yyyy (ตัวเลขทั้งหมด)
+  if (m == null) m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  // Pattern 3: yyyy-mm-dd
+  if (m == null) m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (m == null) return null;
 
   var day, monthIdx, year;
@@ -138,11 +195,17 @@ function parseSheetDateAny(v) {
     if (/^\d{1,2}$/.test(m[2])) {
       monthIdx = parseInt(m[2], 10) - 1;
     } else {
-      var tok = m[2].toLowerCase();
+      var tok = m[2].toLowerCase().replace(/\./g, '').replace(/\s+/g, '');
+      // ลองจับกับชื่อย่อ 3 ตัวอักษรก่อน (Jan, Feb...)
       monthIdx = MONTH_ABBR.map(function (x) { return x.toLowerCase(); }).indexOf(tok.slice(0, 3));
+      // ลองจับกับชื่อเต็มภาษาอังกฤษ (January, February...)
+      if (monthIdx === -1) {
+        monthIdx = MONTH_FULL.map(function (x) { return x.toLowerCase(); }).indexOf(tok);
+      }
+      // ลองจับกับภาษาไทย
       var thaiMap = {
-        "ม.ค.": 0, "ก.พ.": 1, "มี.ค.": 2, "เม.ย.": 3, "พ.ค.": 4, "มิ.ย.": 5,
-        "ก.ค.": 6, "ส.ค.": 7, "ก.ย.": 8, "ต.ค.": 9, "พ.ย.": 10, "ธ.ค.": 11,
+        "มค": 0, "กพ": 1, "มีค": 2, "เมย": 3, "พค": 4, "มิย": 5,
+        "กค": 6, "สค": 7, "กย": 8, "ตค": 9, "พย": 10, "ธค": 11,
         "มกราคม": 0, "กุมภาพันธ์": 1, "มีนาคม": 2, "เมษายน": 3, "พฤษภาคม": 4, "มิถุนายน": 5,
         "กรกฎาคม": 6, "สิงหาคม": 7, "กันยายน": 8, "ตุลาคม": 9, "พฤศจิกายน": 10, "ธันวาคม": 11
       };
@@ -204,17 +267,29 @@ function monthSheetHasData(sheet) {
 }
 
 // หาหน้า sheet เดือนล่าสุดที่มีข้อมูลจริง (ใช้ตอน doGet ดึงข้อมูลกลับเข้าเว็บ)
+// รองรับทั้งชื่อย่อเดือน (Oct, Jan...) และชื่อเต็ม (October, January...)
 function getLatestMonthSheetWithData(ss) {
   var cands = [];
+  var MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   ss.getSheets().forEach(function (sh) {
-    // รองรับทั้งชื่อใหม่ ROUTER_Dashboard_... และชื่อเก่า CNC_Dashboard_... (ชีตประวัติที่ยังไม่ถูกย้ายชื่อ)
-    var mm = sh.getName().match(/^(?:ROUTER|CNC)_Dashboard_([A-Za-z]{3})(\d{4})$/);
+    // รองรับชื่อ ROUTER_Dashboard_Oct2026, ROUTER_Dashboard_October2026, CNC_Dashboard_... (ชีตประวัติที่ยังไม่ถูกย้ายชื่อ)
+    var mm = sh.getName().match(/^(?:ROUTER|CNC)_Dashboard_([A-Za-z]{3,})(\d{4})$/);
     if (mm) {
-      var monthIdx = MONTH_ABBR.indexOf(mm[1]);
+      var monthStr = mm[1];
+      var monthIdx = -1;
+      // ลอง match กับชื่อย่อก่อน
+      var abbrIdx = MONTH_ABBR.indexOf(monthStr);
+      if (abbrIdx !== -1) {
+        monthIdx = abbrIdx;
+      } else {
+        // ลอง match กับชื่อเต็ม (case-insensitive)
+        var fullIdx = MONTH_FULL.map(function (x) { return x.toLowerCase(); }).indexOf(monthStr.toLowerCase());
+        if (fullIdx !== -1) monthIdx = fullIdx;
+      }
       if (monthIdx !== -1) cands.push({ sheet: sh, year: parseInt(mm[2], 10), monthIdx: monthIdx });
     }
   });
-  cands.sort(function (a, b) { return (b.year * 12 + b.monthIdx) - (a.year * 12 + a.monthIdx); });
+  cands.sort(function (a, b) { return (b.year * 12 + b.monthIdx) - (a.year * 12 + b.monthIdx); });
   for (var i = 0; i < cands.length; i++) {
     if (monthSheetHasData(cands[i].sheet)) return cands[i].sheet;
   }
@@ -337,6 +412,18 @@ function createMonthlyTemplate() {
 // ฟังก์ชันรับข้อมูล POST และอัปเดตแบบสะสมข้อมูล (ไม่ลบข้อมูลเก่า/ไม่ซ้อนทับ)
 function doPost(e) {
   try {
+    // ตรวจสอบรหัสผ่าน Admin ก่อนการทำงาน (ถ้ามีการส่งรหัสผ่านมา)
+    try {
+      var rawData = e && e.postData ? JSON.parse(e.postData.contents) : {};
+      if (rawData.action === "adminVerify") {
+        var pw = rawData.password || "";
+        if (pw !== ADMIN_PASSWORD) {
+          return ContentService.createTextOutput(JSON.stringify({ result: "error", message: "รหัสผ่านไม่ถูกต้อง" })).setMimeType(ContentService.MimeType.JSON);
+        }
+        return ContentService.createTextOutput(JSON.stringify({ result: "success", message: "ยืนยันรหัสผ่านสำเร็จ" })).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (_) {}
+
     if (!e || !e.postData || !e.postData.contents) {
       throw new Error("ไม่พบข้อมูล POST payload ที่ส่งเข้ามา");
     }
@@ -496,7 +583,6 @@ function doPost(e) {
     }
 
     sheet.autoResizeColumns(1, sheet.getLastColumn());
-    syncRealtimeBackup(ss, sheet);
 
     return ContentService.createTextOutput(JSON.stringify({
       "result": "success",
@@ -514,6 +600,19 @@ function doPost(e) {
 
 function doGet(e) {
   var action = e && e.parameter && e.parameter.action;
+
+  // Admin access verification (server-side password check)
+  if (action === "adminVerify") {
+    var verifyPw = (e && e.parameter && e.parameter.password) || "";
+    if (verifyPw !== ADMIN_PASSWORD) {
+      return ContentService.createTextOutput(JSON.stringify({
+        result: "error", message: "รหัสผ่านไม่ถูกต้อง"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService.createTextOutput(JSON.stringify({
+      result: "success", message: "ยืนยันรหัสผ่านสำเร็จ"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 
   // Lightweight connection check used by the Admin page.
   if (action === "health") {

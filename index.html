@@ -156,24 +156,11 @@
       <div class="flex items-center gap-2 flex-wrap justify-end">
         <button onclick="openAdminPage()" title="ตั้งค่าผู้ดูแลระบบ" class="px-3.5 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:brightness-110 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"><i class="fa-solid fa-user-gear"></i><span>Admin</span></button>
         <button onclick="returnToLoginWelcome()" title="กลับหน้าหลัก" aria-label="กลับหน้าหลัก" class="px-3.5 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:brightness-110 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"><i class="fa-solid fa-house"></i><span>หน้าหลัก</span></button>
-        <button onclick="fetchDataFromGoogleSheets()" class="px-3.5 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2">
-          <i class="fa-solid fa-cloud-arrow-down"></i> ดึงข้อมูลจาก Google Sheet
-        </button>
-        <button onclick="toggleGoogleSheetModal()" class="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center gap-2 relative">
-          <i class="fa-solid fa-file-csv"></i> Google Sheets Live Sync
-          <span id="syncBadge" class="w-2.5 h-2.5 rounded-full bg-slate-500 border border-slate-900 absolute -top-0.5 -right-0.5" title="สถานะการเชื่อมต่อ"></span>
-        </button>
         <button onclick="processAllMachinesWithAI()" class="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/20 transition flex items-center gap-2">
           <i class="fa-solid fa-wand-magic-sparkles"></i> สกัด AI ทุกเครื่อง
         </button>
-        <button onclick="processAllMachinesWithFreeOCR()" class="px-3 py-2 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center gap-2" title="สกัดด้วย OCR ในเครื่อง ไม่ต้องใช้ API Key">
-          <i class="fa-solid fa-file-magnifying-glass"></i> สกัด OCR ฟรี
-        </button>
         <button onclick="exportAllMachinesToExcel()" class="px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-sky-600/20 transition flex items-center gap-2">
           <i class="fa-solid fa-file-excel"></i> ดาวน์โหลด Excel รวม
-        </button>
-        <button onclick="resetAllDemoData()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center gap-2">
-          <i class="fa-solid fa-rotate-left"></i> รีเซ็ตข้อมูล
         </button>
       </div>
     </div>
@@ -249,11 +236,31 @@
           <input id="adminGeminiModel" type="text" placeholder="เช่น gemini-2.0-flash" class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-violet-400 outline-none text-white text-sm px-3 py-3">
           <button onclick="saveAdminSettings()" class="w-full mt-4 rounded-xl py-3 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold"><i class="fa-solid fa-floppy-disk mr-2"></i>บันทึกการตั้งค่าทั้งหมด</button>
           <div class="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200/80 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-2"></i>คำเตือน: ค่า API Key จะถูกเก็บใน Local Storage ของเบราว์เซอร์นี้ ไม่ควรใส่ API Key ส่วนตัวบนเครื่องสาธารณะหรือเปิดเผยไฟล์ให้ผู้อื่น</div>
+          <button onclick="resetAllDemoData()" class="w-full mt-4 rounded-xl py-3 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold"><i class="fa-solid fa-rotate-left mr-2"></i>รีเซ็ตข้อมูลทั้งหมด (ล้างข้อมูลทุกเครื่อง)</button>
         </div>
       </div>
-      <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-xs text-slate-400 leading-relaxed"><b class="text-slate-200">หมายเหตุการใช้งาน:</b> หน้า Admin นี้เป็นหน้าตั้งค่า ไม่ใช่ระบบยืนยันตัวตน ผู้ที่เข้าถึง Web App ได้สามารถเปิดหน้านี้ได้ หากต้องการจำกัดเฉพาะผู้ดูแล ต้องเพิ่มระบบ PIN/รหัสผ่านฝั่งเซิร์ฟเวอร์หรือ Firebase Authentication เพิ่มเติม</div>
+      <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-xs text-slate-400 leading-relaxed"><b class="text-slate-200">หมายเหตุการใช้งาน:</b> รหัสผ่าน Admin จะถูกร้องขอและตรวจสอบโดยเซิร์ฟเวอร์เท่านั้น ผู้ดูแลไม่เห็นรหัสผ่านบนเว็บ</div>
     </div>
   </section>
+
+  <!-- Admin Password Modal -->
+  <div id="adminLoginModal" class="fixed inset-0 z-[90] bg-slate-950/70 backdrop-blur-sm hidden flex items-center justify-center p-4 no-print">
+    <div class="bg-white text-slate-900 rounded-3xl w-full max-w-md p-8 shadow-2xl relative">
+      <button onclick="closeAdminLoginModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl" aria-label="ปิด"><i class="fa-solid fa-xmark"></i></button>
+      <div class="text-center mb-6">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white text-2xl shadow-lg mb-3"><i class="fa-solid fa-user-shield"></i></div>
+        <h3 class="text-2xl font-black">Admin</h3>
+        <p class="text-sm text-slate-500 mt-1">รหัสผ่านผู้ดูแล</p>
+      </div>
+      <label for="adminLoginPw" class="block text-xs font-bold text-slate-500 mb-2 tracking-wide">รหัสผ่าน</label>
+      <input id="adminLoginPw" type="password" placeholder="กรอกรหัสผ่านผู้ดูแล" class="w-full rounded-xl bg-slate-50 border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-200 outline-none text-slate-800 text-sm px-4 py-3 mb-5 transition" onkeydown="if(event.key==='Enter') submitAdminLogin()">
+      <div class="flex gap-3">
+        <button onclick="submitAdminLogin()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:brightness-110 text-white font-bold shadow-lg shadow-teal-500/20 transition flex items-center justify-center gap-2"><i class="fa-solid fa-lock"></i>เข้าสู่ระบบผู้ดูแล</button>
+        <button onclick="closeAdminLoginModal()" class="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition">ยกเลิก</button>
+      </div>
+      <p id="adminLoginMsg" class="text-xs text-rose-500 text-center mt-3 font-medium hidden"></p>
+    </div>
+  </div>
 
   <!-- Google Sheets Integration Config Modal -->
   <div id="googleSheetModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4 no-print">
@@ -316,7 +323,7 @@
   </div>
 
   <!-- Notification Toast -->
-  <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 ease-out bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 pointer-events-none">
+  <div id="toast" class="fixed bottom-5 right-5 z-[100] transform translate-y-20 opacity-0 transition-all duration-300 ease-out bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 pointer-events-none">
     <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
     <span id="toastMessage" class="text-xs font-medium">ข้อความแจ้งเตือน</span>
   </div>
@@ -404,6 +411,7 @@
 
       (machines || []).forEach(m => {
         const num = getMachineNumberFromName(m && m.name);
+        // ป้องกัน type mismatch: ต้องเป็นตัวเลขเท่านั้น
         if (num !== null && allowedMachineNumbers.includes(num) && !keepers.some(k => k.number === num)) {
           m.name = `Machine No.${num}`; // รูปแบบชื่อเดียวกันทั้งระบบ
           m.number = num;
@@ -504,7 +512,7 @@
     let initialDemoState = {
       activeTab: "summary",
       googleSheetUrl: "https://script.google.com/macros/s/AKfycbxoWvfDPMTSq8iVsXT3si2xwtMNyNIq9m95FW6X8O75-FE1Fi_s1DEg2c35jcfN3bSy/exec",
-      autoSync: true,
+      autoSync: false, // เริ่มต้นปิด auto sync เพื่อป้องกันการส่งข้อมูลทุก 1.5 วินาที (ทำให้ชีต backup กระพริบ)
       geminiApiKey: "",
       geminiModel: "",
       machines: allowedMachineNumbers.map(num => ({
@@ -558,6 +566,7 @@
 
     // Active Application State
     let state = loadSavedState();
+    let isAdminMode = false;
 
 
     // Login-style entry screen (no authentication fields or credential checks).
@@ -587,18 +596,63 @@
       }
     });
 
-    // Admin control center
+    // Admin control center - open login modal
     function openAdminPage() {
-      const page = document.getElementById("adminPage");
-      if (!page) return;
-      document.getElementById("adminSheetUrl").value = state.googleSheetUrl || "";
-      document.getElementById("adminAutoSync").checked = !!state.autoSync;
-      document.getElementById("adminGeminiKey").value = state.geminiApiKey || "";
-      document.getElementById("adminGeminiModel").value = state.geminiModel || "";
-      page.classList.remove("hidden");
-      document.body.style.overflow = "hidden";
+      document.getElementById('adminLoginPw').value = '';
+      document.getElementById('adminLoginMsg').classList.add('hidden');
+      document.getElementById('adminLoginMsg').textContent = '';
+      document.getElementById('adminLoginModal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('adminLoginPw')?.focus(), 50);
     }
-    function closeAdminPage() { document.getElementById("adminPage")?.classList.add("hidden"); document.body.style.overflow = ""; }
+    function closeAdminLoginModal() {
+      document.getElementById('adminLoginModal')?.classList.add('hidden');
+    }
+    async function submitAdminLogin() {
+      const pw = document.getElementById('adminLoginPw').value || '';
+      const msg = document.getElementById('adminLoginMsg');
+      if (pw.trim() === '') {
+        msg.textContent = 'กรุณากรอกรหัสผ่าน';
+        msg.classList.remove('hidden');
+        return;
+      }
+      msg.classList.add('hidden');
+      try {
+        const urlStr = (state.googleSheetUrl || '').trim();
+        if (!urlStr) {
+          msg.textContent = 'ต้องตั้งค่า Google Apps Script URL ก่อน';
+          msg.classList.remove('hidden');
+          return;
+        }
+        const url = new URL(urlStr);
+        url.searchParams.set('action', 'adminVerify');
+        url.searchParams.set('password', pw.trim());
+        const resp = await fetch(url.toString(), { cache: 'no-store' });
+        const text = await resp.text();
+        let result = null;
+        try { result = JSON.parse(text); } catch (_) {}
+        if (!result || result.result !== 'success') {
+          msg.textContent = 'รหัสผ่านไม่ถูกต้องหรือเซิร์ฟเวอร์ไม่ตอบ';
+          msg.classList.remove('hidden');
+          return;
+        }
+        closeAdminLoginModal();
+        showToast('ยืนยันรหัสผ่านสำเร็จ — เปิด Admin', 'success', 2000);
+        const page = document.getElementById('adminPage');
+        if (!page) return;
+        document.getElementById('adminSheetUrl').value = state.googleSheetUrl || '';
+        document.getElementById('adminAutoSync').checked = !!state.autoSync;
+        document.getElementById('adminGeminiKey').value = state.geminiApiKey || '';
+        document.getElementById('adminGeminiModel').value = state.geminiModel || '';
+        page.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        isAdminMode = true;
+        renderActiveView();
+      } catch (err) {
+        msg.textContent = 'ไม่สามารถตรวจสอบรหัสผ่านได้ — ตรวจสอบ URL';
+        msg.classList.remove('hidden');
+      }
+    }
+    function closeAdminPage() { document.getElementById("adminPage")?.classList.add("hidden"); document.body.style.overflow = ""; isAdminMode = false; renderActiveView(); }
     function saveAdminSettings() {
       const url = document.getElementById("adminSheetUrl").value.trim();
       if (url && !/^https:\/\/(script\.google\.com\/macros\/s\/|script\.googleusercontent\.com\/)/i.test(url)) {
@@ -624,12 +678,24 @@
         const result = await response.json();
         if (result.result !== "success") throw new Error(result.message || "ไม่สามารถยืนยันการเชื่อมต่อได้");
         status.innerHTML = '<i class="fa-solid fa-circle-check mr-2 text-emerald-400"></i>เชื่อมต่อสำเร็จ • ' + (result.message || "Google Apps Script พร้อมใช้งาน");
+        showToast("ทดสอบการเชื่อมต่อสำเร็จ", "success", 3000);
       } catch (err) {
         status.innerHTML = '<i class="fa-solid fa-circle-xmark mr-2 text-rose-400"></i>เชื่อมต่อไม่สำเร็จ: ' + escapeHtml(err.message) + '<br><span class="text-slate-500">ตรวจสอบ URL, การ Deploy และสิทธิ์เข้าถึง Web App</span>';
+        showToast("ทดสอบการเชื่อมต่อไม่สำเร็จ", "error", 4000);
       }
     }
-    async function adminFetchFromSheet() { if (!saveAdminSettings()) return; await fetchDataFromGoogleSheets(false); }
-    async function adminSyncToSheet() { if (!saveAdminSettings()) return; await syncAllToGoogleSheets(false); }
+    async function adminFetchFromSheet() { 
+      if (!saveAdminSettings()) return; 
+      const ok = await fetchDataFromGoogleSheets(false); 
+      if (ok) showToast("ดึงข้อมูลจาก Sheet เสร็จแล้ว (สำเร็จ)", "success");
+      else showToast("ดึงข้อมูลจาก Sheet ไม่สำเร็จ", "error");
+    }
+    async function adminSyncToSheet() { 
+      if (!saveAdminSettings()) return; 
+      const ok = await syncAllToGoogleSheets(false); 
+      if (ok) showToast("บันทึก/ซิงค์ลง Sheet เสร็จแล้ว (สำเร็จ)", "success");
+      else showToast("บันทึก/ซิงค์ลง Sheet ไม่สำเร็จ", "error");
+    }
 
     // Toggle Google Sheet Config Modal
     function toggleGoogleSheetModal() {
@@ -727,7 +793,7 @@
           showToast("กรุณาตั้งค่า Google Web App URL ก่อนดึงข้อมูล", "error");
           toggleGoogleSheetModal();
         }
-        return;
+        return false;
       }
 
       if (!silent) showToast("กำลังดึงข้อมูลจาก Google Sheets...", "info");
@@ -765,12 +831,15 @@
           renderActiveView();
           populateDropdownSelector();
           if (!silent) showToast("ดึงข้อมูลจาก Google Sheets เข้าเว็บแอปสำเร็จ!", "success");
+          return true;
         } else {
           if (!silent) showToast("ไม่พบข้อมูลใน Google Sheet หรือรูปแบบไม่ถูกต้อง", "error");
+          return false;
         }
       } catch (err) {
         console.error("Fetch Google Sheet Error:", err);
         if (!silent) showToast("เกิดข้อผิดพลาดในการดึงข้อมูล: " + err.message, "error");
+        return false;
       }
     }
 
@@ -1280,7 +1349,7 @@
                 วิเคราะห์รูปภาพสถานะเครื่อง ROUTER และจัดเรียงตารางให้เครื่อง <strong class="text-slate-200">${escapeHtml(machine.name)}</strong> อัตโนมัติ
               </p>
 
-              <div class="space-y-3">
+              <div class="space-y-3 ${isAdminMode ? '' : 'hidden'}">
                 <div>
                   <label for="apiKeyInput_${machine.id}" class="block text-xs font-medium text-slate-400 mb-1">Gemini API Key (จำเป็นต้องกรอก)</label>
                   <input type="password" id="apiKeyInput_${machine.id}" value="${escapeHtml(state.geminiApiKey || '')}" onchange="saveGeminiApiKey(this.value)" placeholder="วาง API Key จาก Google AI Studio" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
@@ -1601,21 +1670,90 @@
 
     function parseDate(dateStr) {
       if (!dateStr) return new Date(0);
-      const parts = dateStr.split('/');
-      if (parts.length >= 2) {
-        const day = parseInt(parts[0], 10);
-        let month = 0;
-        const mStr = parts[1];
-        const monthsMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
-        if (monthsMap[mStr] !== undefined) {
-          month = monthsMap[mStr];
-        } else {
-          month = parseInt(mStr, 10) - 1;
-        }
-        const year = parts[2] ? parseInt(parts[2], 10) : 2026;
+      const s = String(dateStr).trim();
+      if (!s) return new Date(0);
+      
+      // YYYY-MM-DD
+      const ymdMatch = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      if (ymdMatch) {
+        let year = parseInt(ymdMatch[1], 10);
+        let month = parseInt(ymdMatch[2], 10) - 1;
+        let day = parseInt(ymdMatch[3], 10);
+        if (year > 2200) year -= 543; // Buddhist to Christian era
         return new Date(year, month, day);
       }
-      return new Date(dateStr);
+      
+      // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
+      const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+      if (dmyMatch) {
+        let day = parseInt(dmyMatch[1], 10);
+        let month = parseInt(dmyMatch[2], 10) - 1;
+        let year = parseInt(dmyMatch[3], 10);
+        if (year > 2200) year -= 543;
+        return new Date(year, month, day);
+      }
+      
+      // DD/Mon/YYYY or DD-Mon-YYYY or DD Mon YYYY (with English or Thai months)
+      const dmMatch = s.match(/^(\d{1,2})[\/\-. ]+([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\.]{1,})[\/\-. ]+(\d{4})$/);
+      if (dmyMatch) {
+        let day = parseInt(dmyMatch[1], 10);
+        let year = parseInt(dmyMatch[3], 10);
+        if (year > 2200) year -= 543;
+        
+        // Month mapping
+        const monthMap = {
+          jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3,
+          may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7,
+          september: 8, sep: 8, october: 9, oct: 9, november: 10, nov: 10,
+          december: 11, december: 11,
+          "มค": 0, "กพ": 1, "มีค": 2, "เมย": 3, "พค": 4, "มิย": 5,
+          "กค": 6, "สค": 7, "กย": 8, "ตค": 9, "พย": 10, "ธค": 11,
+          "มกราคม": 0, "กุมภาพันธ์": 1, "มีนาคม": 2, "เมษายน": 3, "พฤษภาคม": 4, "มิถุนายน": 5,
+          "กรกฎาคม": 6, "สิงหาคม": 7, "กันยายน": 8, "ตุลาคม": 9, "พฤศจิกายน": 10, "ธันวาคม": 11
+        };
+        
+        let month = -1;
+        const tok = dmyMatch[2].toLowerCase().replace(/\./g, '').replace(/\s+/g, '');
+        
+        // Try to match with short month names
+        const shortMonths = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+        if (shortMonths.includes(tok)) {
+          month = shortMonths.indexOf(tok);
+        } else if (tok.length === 2) {
+          // Try to match with single letter + month number
+          const numMatch = tok.match(/(\d)/);
+          if (numMatch) {
+            month = parseInt(numMatch[1], 10) - 1;
+          }
+        } else {
+          // Try to match with full month name
+          const fullMonths = [
+            "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+            "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+          ];
+          const fullMonthMatch = fullMonths.find(fm => 
+            fm.toLowerCase().startsWith(tok) || 
+            tok.startsWith(fm.toLowerCase())
+          );
+          if (fullMonthMatch) {
+            const fullMonthIdx = fullMonths.indexOf(fullMonthMatch);
+            month = fullMonthIdx;
+          } else {
+            // Try to find the month number in the string
+            const numMatch = tok.match(/(\d)/);
+            if (numMatch) {
+              month = parseInt(numMatch[1], 10) - 1;
+            }
+          }
+        }
+        
+        if (month >= 0) {
+          return new Date(year, month, day);
+        }
+      }
+      
+      // Fallback: let JavaScript parse it
+      return new Date(s);
     }
 
     function addColumn(machineId) {
@@ -2425,13 +2563,17 @@
     // เวลาเที่ยงคืนแสดงเป็นเลข 24 เสมอ: "0:00" / "00:00:00" / "24:00" → "24:00:00" (ตรงกับจอเครื่องและชีต)
     function routerMidnightTo24(timeStr) {
       if (timeStr === "" || timeStr === null || timeStr === undefined) return timeStr;
-      const m = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{1,2}))?$/);
-      if (!m) return String(timeStr).trim();
+      const s = String(timeStr).trim();
+      // Match H:MM[:SS] or HH:MM[:SS] or H:MM or HH:MM
+      const m = s.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+      if (!m) return s;
       const h = parseInt(m[1], 10);
       const mi = parseInt(m[2], 10);
       const ss = m[3] === undefined ? 0 : parseInt(m[3], 10);
+      // เที่ยงคืน (0:00 หรือ 00:00 หรือ 0:00:00 หรือ 24:00) → 24:00:00
       if ((h === 0 || h === 24) && mi === 0 && ss === 0) return "24:00:00";
-      return String(timeStr).trim();
+      // คืนค่ารูปเดิม
+      return s;
     }
 
     function mergeParsedRowsIntoMachine(machine, rows) {
@@ -3098,12 +3240,17 @@
 
     // ตรวจสอบว่าข้อมูลที่บันทึกไว้ในเครื่องเป็นของเดือนก่อนหน้าหรือไม่ แล้วแจ้งเตือนผู้ใช้
     function checkSavedMonthMismatch() {
-      const firstMachine = state.machines[0];
-      if (!firstMachine || !Array.isArray(firstMachine.data) || firstMachine.data.length === 0) return;
-      const savedKey = getMonthKeyFromDateStr(firstMachine.data[0].date);
       const now = new Date();
       const currentKey = `${now.getFullYear()}-${now.getMonth()}`;
-      if (savedKey && savedKey !== currentKey) {
+      let foundMismatch = false;
+      state.machines.forEach(m => {
+        if (!m || !Array.isArray(m.data) || m.data.length === 0) return;
+        const savedKey = getMonthKeyFromDateStr(m.data[0].date);
+        if (savedKey && savedKey !== currentKey) {
+          foundMismatch = true;
+        }
+      });
+      if (foundMismatch) {
         showToast(`ข้อมูลที่บันทึกไว้เป็นของเดือนก่อนหน้า ไม่ตรงกับเดือนปัจจุบัน — หากต้องการฟอร์มเดือนใหม่ให้กดปุ่ม "รีเซ็ตข้อมูล"`, "info", 7000);
       }
     }
