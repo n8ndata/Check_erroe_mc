@@ -4,8 +4,14 @@ function formatEnglishDay(dayStr) {
   var map = {
     "Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", 
     "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday",
+    "Monday": "Monday", "Tuesday": "Tuesday", "Wednesday": "Wednesday",
+    "Thursday": "Thursday", "Friday": "Friday", "Saturday": "Saturday", "Sunday": "Sunday",
     "จันทร์": "Monday", "อังคาร": "Tuesday", "พุธ": "Wednesday", 
-    "พฤหัสบดี": "Thursday", "ศุกร์": "Friday", "เสาร์": "Saturday", "อาทิตย์": "Sunday"
+    "พฤหัสบดี": "Thursday", "ศุกร์": "Friday", "เสาร์": "Saturday", "อาทิตย์": "Sunday",
+    "วันจันทร์": "Monday", "วันอังคาร": "Tuesday", "วันพุธ": "Wednesday", 
+    "วันพฤหัสบดี": "Thursday", "วันศุกร์": "Friday", "วันเสาร์": "Saturday", "วันอาทิตย์": "Sunday",
+    "จ.": "Monday", "อ.": "Tuesday", "พ.": "Wednesday", "พฤ.": "Thursday", "ศ.": "Friday", "ส.": "Saturday", "อา.": "Sunday",
+    "จ": "Monday", "อ": "Tuesday", "พ": "Wednesday", "พฤ": "Thursday", "ศ": "Friday", "ส": "Saturday", "อา": "Sunday"
   };
   var clean = String(dayStr).trim();
   return map[clean] || clean;
@@ -15,10 +21,23 @@ function formatEnglishDay(dayStr) {
 function formatEnglishDate(dateStr) {
   if (!dateStr) return "";
   
+  // กรณี dateStr เป็น Date object
+  if (Object.prototype.toString.call(dateStr) === '[object Date]' || (dateStr instanceof Date)) {
+    if (isNaN(dateStr.getTime())) return "";
+    var engM = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var dDay = ("0" + dateStr.getDate()).slice(-2);
+    var dMonth = engM[dateStr.getMonth() + 1];
+    var dYear = dateStr.getFullYear();
+    return dDay + "/" + dMonth + "/" + dYear;
+  }
+
   var thaiMonths = {
     "ม.ค.": "Jan", "ก.พ.": "Feb", "มี.ค.": "Mar", "เม.ย.": "Apr", 
     "พ.ค.": "May", "มิ.ย.": "Jun", "ก.ค.": "Jul", "ส.ค.": "Aug", 
     "ก.ย.": "Sep", "ต.ค.": "Oct", "พ.ย.": "Nov", "ธ.ค.": "Dec",
+    "มค": "Jan", "กพ": "Feb", "มีค": "Mar", "เมย": "Apr", 
+    "พค": "May", "มิย": "Jun", "กค": "Jul", "สค": "Aug", 
+    "กย": "Sep", "ตค": "Oct", "พย": "Nov", "ธค": "Dec",
     "มกราคม": "Jan", "กุมภาพันธ์": "Feb", "มีนาคม": "Mar", "เมษายน": "Apr",
     "พฤษภาคม": "May", "มิถุนายน": "Jun", "กรกฎาคม": "Jul", "สิงหาคม": "Aug",
     "กันยายน": "Sep", "ตุลาคม": "Oct", "พฤศจิกายน": "Nov", "ธันวาคม": "Dec"
@@ -30,6 +49,17 @@ function formatEnglishDate(dateStr) {
   };
 
   var cleanStr = String(dateStr).trim();
+  
+  // ตรวจจับจาก parseSheetDateAny ก่อน
+  var dateObj = parseSheetDateAny(cleanStr);
+  if (dateObj) {
+    var engM = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var dDay = ("0" + dateObj.getDate()).slice(-2);
+    var dMonth = engM[dateObj.getMonth() + 1];
+    var dYear = dateObj.getFullYear();
+    return dDay + "/" + dMonth + "/" + dYear;
+  }
+
   // แทนที่เดือนภาษาไทยก่อน
   for (var thai in thaiMonths) {
     if (cleanStr.indexOf(thai) !== -1) {
@@ -44,25 +74,26 @@ function formatEnglishDate(dateStr) {
     }
   }
 
-  var parts = cleanStr.split('/');
+  var parts = cleanStr.split(/[\/\-\.]/);
   var engMonths = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   
   if (parts.length === 3) {
-    var day = ("0" + parseInt(parts[0], 10)).slice(-2);
-    var monthPart = parts[1];
-    var year = parts[2];
-    // ลองแปลงเดือนเป็นตัวเลข
+    var day, monthPart, year;
+    if (parts[0].length === 4) { // YYYY-MM-DD
+      year = parseInt(parts[0], 10);
+      monthPart = parts[1];
+      day = ("0" + parseInt(parts[2], 10)).slice(-2);
+    } else {
+      day = ("0" + parseInt(parts[0], 10)).slice(-2);
+      monthPart = parts[1];
+      year = parseInt(parts[2], 10);
+    }
+    if (year > 2200) year = year - 543;
     var monthNum = parseInt(monthPart, 10);
     if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-      // ลองจับจากชื่อเดือนย่อ/เต็ม
       var monthLower = String(monthPart).toLowerCase();
       monthNum = engMonths.indexOf(monthPart);
       if (monthNum === -1) {
-        // ลองจับจากชื่อเดือนเต็มแปลงเป็นย่อ
-        for (var abbr in engMonthsFull) {
-          // ไม่จำเป็นเพราะตอนนี้เป็นย่อแล้ว
-        }
-        // ลองจับจากตัวเลขที่อาจอยู่ในชื่อเดือน
         var numMatch = monthLower.match(/(\d+)/);
         if (numMatch) monthNum = parseInt(numMatch[1], 10);
       }
@@ -134,36 +165,16 @@ function syncRealtimeBackup(ss, fromSheet) {
     }
   }
 
-  // ตรวจสอบเวลาการแก้ไขล่าสุดของชีต master sheet ถ้ายังไม่มีการเปลี่ยนแปลง → ข้ามไป
-  var lastUpdated = masterSheet.getRange("A1").getValue(); // ใช้เซลล์ A1 เป็นตัวบอกเวลา sync ล่าสุด
   var now = new Date();
-  
-  // ถ้า backup sheet มีข้อมูลอยู่แล้ว และ master sheet ยังไม่มีการอัปเดตใหม่ → ไม่ต้องเขียนซ้ำ
-  var backupLastRow = backupSheet.getLastRow();
-  if (backupLastRow > 1 && lastUpdated && new Date(lastUpdated).getTime() > 0) {
-    // ถ้ามีข้อมูลสำรองอยู่แล้ว และ master sheet ไม่มีการเปลี่ยนแปลง → ออกทันที
-    var lastBackupTimeStr = backupSheet.getRange(1, 1).getValue();
-    if (lastBackupTimeStr && String(lastBackupTimeStr).indexOf("Real-time Backup Sync") !== -1) {
-      // มีการบันทึกเวลาไว้แล้ว → ตรวจสอบว่าข้อมูลใน master เปลี่ยนหรือไม่
-      var masterLastModified = masterSheet.getRange(1, 1).getLastRow(); // ใช้จำนวนแถวเป็นตัวบอก
-      // ถ้าแถวไม่เปลี่ยน → ข้าม
-      if (masterSheet.getLastRow() <= backupLastRow - 1) {
-        return;
-      }
-    }
-  }
-
   var lastRow = masterSheet.getLastRow();
   var lastCol = masterSheet.getLastColumn();
 
   if (lastRow > 0 && lastCol > 0) {
-    // เขียนข้อมูลลงเซลล์ A1 ของ master sheet เป็น timestamp (กันการ sync ซ้ำซ้อน)
-    masterSheet.getRange(1, 1).setValue(now);
-    
+    // สำรองข้อมูลลง backup sheet โดยไม่แตะต้องเซลล์ A1 ของ masterSheet เพื่อรักษาชื่อหัวตาราง Machine No.10 ไว้
     backupSheet.clear();
     masterSheet.getRange(1, 1, lastRow, lastCol).copyTo(backupSheet.getRange(1, 1));
     backupSheet.insertRowBefore(1);
-    backupSheet.getRange(1, 1).setValue("Real-time Backup Sync Timestamp: " + now.toLocaleString());
+    backupSheet.getRange(1, 1).setValue("Real-time Backup Sync Timestamp: " + now.toLocaleString() + " (Source: " + masterSheet.getName() + ")");
     backupSheet.getRange(1, 1).setFontWeight("bold").setFontColor("#10b981");
   }
 }
@@ -566,11 +577,13 @@ function doPost(e) {
             var itemDateObj = parseSheetDateAny(dateVal);
             if (itemDateObj && itemDateObj.getMonth() === grp.monthIdx && itemDateObj.getFullYear() === grp.year) {
               colIndex = maxNeededCol + 1;
-              maxNeededCol = colIndex;
               colByDate[colKey] = colIndex;
             } else {
               continue; // วันที่ไม่ได้อยู่ในเดือนของชีตนี้ ข้ามไป
             }
+          }
+          if (colIndex > maxNeededCol) {
+            maxNeededCol = colIndex;
           }
 
           updates[colIndex] = {
@@ -587,29 +600,33 @@ function doPost(e) {
         var colIndexes = Object.keys(updates);
         if (colIndexes.length > 0) {
           var blockWidth = maxNeededCol - 1; // จำนวนคอลัมน์ตั้งแต่คอลัมน์ B (2) ถึง maxNeededCol
-          var block = sheet.getRange(tableStartRow, 2, 7, blockWidth).getValues();
+          if (blockWidth > 0) {
+            var block = sheet.getRange(tableStartRow, 2, 7, blockWidth).getValues();
 
-          for (var k = 0; k < colIndexes.length; k++) {
-            var ci = parseInt(colIndexes[k], 10);
-            var idxInBlock = ci - 2;
-            var u = updates[ci];
-            block[0][idxInBlock] = u.day;
-            block[1][idxInBlock] = u.date;
-            if (u.ready) block[2][idxInBlock] = u.ready;
-            if (u.working) block[3][idxInBlock] = u.working;
-            if (u.waiting) block[4][idxInBlock] = u.waiting;
-            if (u.standstill) block[5][idxInBlock] = u.standstill;
-            if (u.duty) block[6][idxInBlock] = u.duty;
-            recordsUpdated++;
+            for (var k = 0; k < colIndexes.length; k++) {
+              var ci = parseInt(colIndexes[k], 10);
+              var idxInBlock = ci - 2;
+              if (idxInBlock >= 0 && idxInBlock < blockWidth) {
+                var u = updates[ci];
+                block[0][idxInBlock] = u.day;
+                block[1][idxInBlock] = u.date;
+                if (u.ready) block[2][idxInBlock] = u.ready;
+                if (u.working) block[3][idxInBlock] = u.working;
+                if (u.waiting) block[4][idxInBlock] = u.waiting;
+                if (u.standstill) block[5][idxInBlock] = u.standstill;
+                if (u.duty) block[6][idxInBlock] = u.duty;
+                recordsUpdated++;
+              }
+            }
+
+            sheet.getRange(tableStartRow, 2, 7, blockWidth).setNumberFormat("@");
+            sheet.getRange(tableStartRow, 2, 7, blockWidth).setValues(block);
+
+            // จัดรูปแบบเป็นชุด (batch)
+            sheet.getRange(tableStartRow, 2, 2, blockWidth).setFontWeight("bold").setHorizontalAlignment("center");
+            sheet.getRange(tableStartRow + 2, 2, 4, blockWidth).setHorizontalAlignment("center");
+            sheet.getRange(tableStartRow + 6, 2, 1, blockWidth).setFontWeight("bold").setFontColor("#10b981");
           }
-
-          sheet.getRange(tableStartRow, 2, 7, blockWidth).setNumberFormat("@");
-          sheet.getRange(tableStartRow, 2, 7, blockWidth).setValues(block);
-
-          // จัดรูปแบบเป็นชุด (batch)
-          sheet.getRange(tableStartRow, 2, 2, blockWidth).setFontWeight("bold").setHorizontalAlignment("center");
-          sheet.getRange(tableStartRow + 2, 2, 4, blockWidth).setHorizontalAlignment("center");
-          sheet.getRange(tableStartRow + 6, 2, 1, blockWidth).setFontWeight("bold").setFontColor("#10b981");
         }
 
         // ล้างคอลัมน์ขยะ/ส่วนเกินที่เลยขอบเขตเดือนออกไป (เช่น คอลัมน์ 32 ที่เคยถูกเขียนหลุดออกไป)
@@ -624,6 +641,10 @@ function doPost(e) {
           sheet.getRange(tableStartRow, 1, 7, Math.min(ownMaxCol, normalMaxCol)).setBorder(true, true, true, true, true, true, "#334155", SpreadsheetApp.BorderStyle.SOLID);
         }
       }
+      // ซิงค์ชีตสำรอง Real-time Backup ให้ชีตเดือนนี้
+      try {
+        syncRealtimeBackup(ss, sheet);
+      } catch (backupErr) {}
       // ไม่เรียก autoResizeColumns ตอน sync เพราะคอลัมน์ตั้งไว้แล้วตั้งแต่ตอนสร้าง Template ช่วยให้ sync เร็วขึ้น 10 เท่า
     }
 
@@ -744,9 +765,10 @@ function doGet(e) {
             var dutyRow = values[r + 6] || [];
 
             for (var c = 1; c < row.length; c++) {
-              var dateVal = String(dateRow[c] || "").trim();
+              var dateRaw = dateRow[c];
+              var dateVal = formatEnglishDate(dateRaw);
               if (dateVal) {
-                var dayVal = String(dayRow[c] || "").trim();
+                var dayVal = formatEnglishDay(String(dayRow[c] || "").trim());
                 var dutyRaw = String(dutyRow[c] || "").replace("%", "").trim();
                 var dateKey = dateVal.toLowerCase();
                 var hasRealData = String(readyRow[c] || "").trim() || String(workingRow[c] || "").trim();

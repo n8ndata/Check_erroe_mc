@@ -154,6 +154,11 @@
 
       <!-- Quick Global Actions Bar -->
       <div class="flex items-center gap-2 flex-wrap justify-end">
+        <button onclick="syncAllToGoogleSheets()" title="ซิงค์ข้อมูลไปยัง Google Sheets" class="relative px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <span>ซิงค์ชีต</span>
+          <span id="syncBadge" class="w-2.5 h-2.5 rounded-full bg-slate-500 border border-slate-900 absolute -top-0.5 -right-0.5"></span>
+        </button>
         <button onclick="openAdminPage()" title="ตั้งค่าผู้ดูแลระบบ" class="px-3.5 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:brightness-110 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"><i class="fa-solid fa-user-gear"></i><span>Admin</span></button>
         <button onclick="returnToLoginWelcome()" title="กลับหน้าหลัก" aria-label="กลับหน้าหลัก" class="px-3.5 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:brightness-110 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"><i class="fa-solid fa-house"></i><span>หน้าหลัก</span></button>
         <button onclick="processAllMachinesWithAI()" class="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/20 transition flex items-center gap-2">
@@ -456,8 +461,16 @@
     // คีย์เก่าก่อนเปลี่ยนชื่อระบบ CNC → ROUTER (ใช้ย้ายข้อมูลที่บันทึกไว้ให้อัตโนมัติ ไม่ให้หาย)
     const LEGACY_STORAGE_KEY = "cnc_dashboard_persistent_state_real_month_v2";
 
-    // ลำดับโมเดล Gemini ที่จะลองใช้ (โมเดลหลักก่อน จากนั้น fallback อัตโนมัติเมื่อโมเดลถูก deprecate)
-    const GEMINI_MODEL_CANDIDATES = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+    // ลำดับโมเดล Gemini ที่จะลองใช้ (โมเดลมาตรฐานและโมเดลล่าสุด มี fallback อัตโนมัติเมื่อโมเดลถูก deprecate)
+    const GEMINI_MODEL_CANDIDATES = [
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-3-flash-preview",
+      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite"
+    ];
 
     // Helper: Map day index to English FULL day name (เช่น Thursday, Friday)
     const ENG_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -616,25 +629,8 @@
         return;
       }
       msg.classList.add('hidden');
-      try {
-        const urlStr = (state.googleSheetUrl || '').trim();
-        if (!urlStr) {
-          msg.textContent = 'ต้องตั้งค่า Google Apps Script URL ก่อน';
-          msg.classList.remove('hidden');
-          return;
-        }
-        const url = new URL(urlStr);
-        url.searchParams.set('action', 'adminVerify');
-        url.searchParams.set('password', pw.trim());
-        const resp = await fetch(url.toString(), { cache: 'no-store' });
-        const text = await resp.text();
-        let result = null;
-        try { result = JSON.parse(text); } catch (_) {}
-        if (!result || result.result !== 'success') {
-          msg.textContent = 'รหัสผ่านไม่ถูกต้องหรือเซิร์ฟเวอร์ไม่ตอบ';
-          msg.classList.remove('hidden');
-          return;
-        }
+
+      const enterAdmin = () => {
         closeAdminLoginModal();
         showToast('ยืนยันรหัสผ่านสำเร็จ — เปิด Admin', 'success', 2000);
         const page = document.getElementById('adminPage');
@@ -647,8 +643,49 @@
         document.body.style.overflow = 'hidden';
         isAdminMode = true;
         renderActiveView();
+      };
+
+      const urlStr = (state.googleSheetUrl || '').trim();
+      const localPassword = "st1910";
+
+      // ถ้าไม่มี URL หรือรหัสตรงกับรหัสเซิร์ฟเวอร์ ให้เข้าได้ทันที (ป้องกันกรณี URL เสียแล้วเข้าแก้ไม่ได้)
+      if (!urlStr) {
+        if (pw.trim() === localPassword) {
+          enterAdmin();
+          return;
+        } else {
+          msg.textContent = 'รหัสผ่านไม่ถูกต้อง';
+          msg.classList.remove('hidden');
+          return;
+        }
+      }
+
+      try {
+        const url = new URL(urlStr);
+        url.searchParams.set('action', 'adminVerify');
+        url.searchParams.set('password', pw.trim());
+        const resp = await fetch(url.toString(), { cache: 'no-store' });
+        const text = await resp.text();
+        let result = null;
+        try { result = JSON.parse(text); } catch (_) {}
+        if (result && result.result === 'success') {
+          enterAdmin();
+          return;
+        }
+        // หากเซิร์ฟเวอร์ตอบไม่สำเร็จ หรือรหัสไม่ตรง แต่ตรงกับรหัส master
+        if (pw.trim() === localPassword) {
+          enterAdmin();
+          return;
+        }
+        msg.textContent = 'รหัสผ่านไม่ถูกต้อง';
+        msg.classList.remove('hidden');
       } catch (err) {
-        msg.textContent = 'ไม่สามารถตรวจสอบรหัสผ่านได้ — ตรวจสอบ URL';
+        // หากเครือข่าย/URL มีปัญหา ให้ตรวจกับรหัส master เพื่อให้ผู้ใช้เข้าหน้า Admin แก้ไข URL ได้
+        if (pw.trim() === localPassword) {
+          enterAdmin();
+          return;
+        }
+        msg.textContent = 'รหัสผ่านไม่ถูกต้องหรือเซิร์ฟเวอร์ไม่ตอบ';
         msg.classList.remove('hidden');
       }
     }
@@ -784,7 +821,10 @@
         for (const machine of state.machines) {
           const rows = (machine.data || []).filter(d => {
             if (d.selected === false) return false;
-            const hasTime = (d.ready && d.ready !== "00:00:00") || (d.working && d.working !== "00:00:00") || (d.waiting && d.waiting !== "00:00:00") || (d.standstill && d.standstill !== "00:00:00");
+            const hasTime = (d.ready && String(d.ready).trim() !== "") ||
+                            (d.working && String(d.working).trim() !== "" && d.working !== "00:00:00") ||
+                            (d.waiting && String(d.waiting).trim() !== "" && d.waiting !== "00:00:00") ||
+                            (d.standstill && String(d.standstill).trim() !== "" && d.standstill !== "00:00:00");
             const hasDuty = d.duty !== "" && d.duty !== null && d.duty !== undefined;
             return hasTime || hasDuty;
           });
@@ -811,13 +851,13 @@
         }
 
         // 2. จัดกลุ่มเครื่องจักรหลายๆ เครื่องรวมกันเป็นชุดใหญ่ (Multi-Machine Batch)
-        // แทนที่จะส่งทีละเครื่องหรือทีละ 3 วัน เราแพ็ครวมหลายเครื่องพร้อมกันในคำขอเดียว (ไม่เกิน 3,200 ตัวอักษรต่อ URL)
+        // แทนที่จะส่งทีละเครื่อง เราแพ็ครวมหลายเครื่องพร้อมกันในคำขอเดียว (ไม่เกิน 1,800 ตัวอักษรต่อ URL เพื่อความเสถียรบนทุกเบราว์เซอร์)
         const preparedList = [];
         for (const mItem of machinesWithData) {
-          if (mItem.data.length > 15) {
-            // กรณีเครื่องเดียวมีข้อมูลมากกว่า 15 วัน ให้แบ่งก้อนละ 15 วัน
-            for (let i = 0; i < mItem.data.length; i += 15) {
-              preparedList.push({ name: mItem.name, data: mItem.data.slice(i, i + 15) });
+          if (mItem.data.length > 10) {
+            // กรณีเครื่องเดียวมีข้อมูลมากกว่า 10 วัน ให้แบ่งก้อนละ 10 วัน เพื่อไม่ให้ URL ยาวเกิน
+            for (let i = 0; i < mItem.data.length; i += 10) {
+              preparedList.push({ name: mItem.name, data: mItem.data.slice(i, i + 10) });
             }
           } else {
             preparedList.push(mItem);
@@ -830,7 +870,7 @@
 
         for (const item of preparedList) {
           const itemStr = JSON.stringify(item);
-          if (currentBatch.length > 0 && (currentLen + itemStr.length) > 3000) {
+          if (currentBatch.length > 0 && (currentLen + itemStr.length) > 1800) {
             batches.push(currentBatch);
             currentBatch = [item];
             currentLen = itemStr.length;
@@ -902,9 +942,9 @@
             data: m.data.map(d => ({ 
               ...d, 
               ready: routerMidnightTo24(d.ready || ""),
-              working: routerMidnightTo24(d.working || ""),
-              waiting: routerMidnightTo24(d.waiting || ""),
-              standstill: routerMidnightTo24(d.standstill || ""),
+              working: d.working || "",
+              waiting: d.waiting || "",
+              standstill: d.standstill || "",
               day: d.day || getDayNameFromDateStr(d.date),
               selected: true 
             }))
@@ -1152,7 +1192,10 @@
         };
       });
 
-      const overallAvgDuty = state.machines.length > 0 ? (sumAvgDuty / state.machines.length).toFixed(1) : 0;
+      const activeDutyMachines = summaryMetrics.filter(m => m.avgDuty > 0);
+      const overallAvgDuty = activeDutyMachines.length > 0 
+        ? (activeDutyMachines.reduce((sum, m) => sum + m.avgDuty, 0) / activeDutyMachines.length).toFixed(1) 
+        : 0;
       const totalOperatingHours = totalWorkingHours + totalWaitingHours + totalStandstillHours;
 
       container.innerHTML = `
@@ -1301,6 +1344,7 @@
 
     // Render Dashboard Charts
     function renderDashboardCharts(metrics) {
+      if (typeof Chart === 'undefined') return;
       const labels = metrics.map(m => m.name);
       const dutyData = metrics.map(m => m.avgDuty);
       const workData = metrics.map(m => m.workHours);
@@ -1675,8 +1719,9 @@
         if (autoDay) machine.data[idx].day = autoDay;
         renderMachineTable(machineId);
       } else {
-        // ช่องเวลา (Ready/Working/Waiting/Standstill): เที่ยงคืน → 24:00:00 ตามระบบเสมอ
-        machine.data[idx][key] = ["ready", "working", "waiting", "standstill"].includes(key)
+        // ช่องเวลา Ready: 0:00 หรือ 00:00:00 หมายถึงเปิดเครื่อง 24 ชม. → 24:00:00 ตามระบบ
+        // ส่วน Working/Waiting/Standstill ค่า 0 หมายถึง 0 ชม. คงเป็น 00:00:00 ตามจริง
+        machine.data[idx][key] = (key === 'ready')
           ? routerMidnightTo24(value)
           : value;
       }
@@ -1717,6 +1762,8 @@
         }
         if (!machine.name || machine.name !== candidate) {
           machine.name = candidate;
+          const num = getMachineNumberFromName(candidate);
+          if (num !== null) machine.number = num;
           renderTabs();
           renderActiveView();
           populateDropdownSelector();
@@ -1762,7 +1809,7 @@
       if (!s) return new Date(0);
       
       // YYYY-MM-DD
-      const ymdMatch = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      const ymdMatch = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
       if (ymdMatch) {
         let year = parseInt(ymdMatch[1], 10);
         let month = parseInt(ymdMatch[2], 10) - 1;
@@ -1772,7 +1819,7 @@
       }
       
       // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
-      const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+      const dmyMatch = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
       if (dmyMatch) {
         let day = parseInt(dmyMatch[1], 10);
         let month = parseInt(dmyMatch[2], 10) - 1;
@@ -1783,65 +1830,47 @@
       
       // DD/Mon/YYYY or DD-Mon-YYYY or DD Mon YYYY (with English or Thai months)
       const dmMatch = s.match(/^(\d{1,2})[\/\-. ]+([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\.]{1,})[\/\-. ]+(\d{4})$/);
-      if (dmyMatch) {
-        let day = parseInt(dmyMatch[1], 10);
-        let year = parseInt(dmyMatch[3], 10);
+      if (dmMatch) {
+        let day = parseInt(dmMatch[1], 10);
+        let year = parseInt(dmMatch[3], 10);
         if (year > 2200) year -= 543;
         
-        // Month mapping
+        // Month mapping (0-11)
         const monthMap = {
-          jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3,
-          may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7,
-          september: 8, sep: 8, october: 9, oct: 9, november: 10, nov: 10,
-          december: 11, december: 11,
+          jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+          apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6,
+          aug: 7, august: 7, sep: 8, september: 8, oct: 9, october: 9,
+          nov: 10, november: 10, dec: 11, december: 11,
           "มค": 0, "กพ": 1, "มีค": 2, "เมย": 3, "พค": 4, "มิย": 5,
           "กค": 6, "สค": 7, "กย": 8, "ตค": 9, "พย": 10, "ธค": 11,
+          "ม.ค.": 0, "ก.พ.": 1, "มี.ค.": 2, "เม.ย.": 3, "พ.ค.": 4, "มิ.ย.": 5,
+          "ก.ค.": 6, "ส.ค.": 7, "ก.ย.": 8, "ต.ค.": 9, "พ.ย.": 10, "ธ.ค.": 11,
           "มกราคม": 0, "กุมภาพันธ์": 1, "มีนาคม": 2, "เมษายน": 3, "พฤษภาคม": 4, "มิถุนายน": 5,
           "กรกฎาคม": 6, "สิงหาคม": 7, "กันยายน": 8, "ตุลาคม": 9, "พฤศจิกายน": 10, "ธันวาคม": 11
         };
         
+        const rawTok = dmMatch[2].toLowerCase();
+        const tok = rawTok.replace(/\./g, '').replace(/\s+/g, '');
         let month = -1;
-        const tok = dmyMatch[2].toLowerCase().replace(/\./g, '').replace(/\s+/g, '');
-        
-        // Try to match with short month names
-        const shortMonths = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-        if (shortMonths.includes(tok)) {
-          month = shortMonths.indexOf(tok);
-        } else if (tok.length === 2) {
-          // Try to match with single letter + month number
-          const numMatch = tok.match(/(\d)/);
-          if (numMatch) {
-            month = parseInt(numMatch[1], 10) - 1;
-          }
+        if (monthMap[tok] !== undefined) {
+          month = monthMap[tok];
+        } else if (monthMap[rawTok] !== undefined) {
+          month = monthMap[rawTok];
         } else {
-          // Try to match with full month name
-          const fullMonths = [
-            "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
-            "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-          ];
-          const fullMonthMatch = fullMonths.find(fm => 
-            fm.toLowerCase().startsWith(tok) || 
-            tok.startsWith(fm.toLowerCase())
-          );
-          if (fullMonthMatch) {
-            const fullMonthIdx = fullMonths.indexOf(fullMonthMatch);
-            month = fullMonthIdx;
-          } else {
-            // Try to find the month number in the string
-            const numMatch = tok.match(/(\d)/);
-            if (numMatch) {
-              month = parseInt(numMatch[1], 10) - 1;
-            }
-          }
+          const shortMonths = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+          const prefix = tok.slice(0, 3);
+          const sIdx = shortMonths.indexOf(prefix);
+          if (sIdx !== -1) month = sIdx;
         }
         
-        if (month >= 0) {
+        if (month >= 0 && month <= 11) {
           return new Date(year, month, day);
         }
       }
       
       // Fallback: let JavaScript parse it
-      return new Date(s);
+      const fallback = new Date(s);
+      return isNaN(fallback.getTime()) ? new Date(0) : fallback;
     }
 
     function addColumn(machineId) {
@@ -2289,7 +2318,7 @@
             } else {
               const midLower = mid.toLowerCase();
               const midNoDots = midLower.replace(/\./g, '').replace(/\s/g, '');
-              monthName = monthNameMap[midLower] || monthNameMap[midNoDots] || monthNameMap[engMonths.find(en => en.toLowerCase() === midNoDots)] || null;
+              monthName = monthNameMap[midLower] || monthNameMap[midNoDots] || monthNameMap[ROUTER_ENG_MONTHS.find(en => en.toLowerCase() === midNoDots)] || null;
             }
             yearNum = m[3];
           }
@@ -2369,7 +2398,7 @@
         monthName = ROUTER_ENG_MONTHS[parseInt(monthTok, 10) - 1] || null;
       } else {
         const cleaned = monthTok.toLowerCase();
-        monthName = ROUTER_MONTH_NAME_MAP[cleaned] || null;
+        monthName = ROUTER_MONTH_NAME_MAP[cleaned] || ROUTER_MONTH_NAME_MAP[cleaned.replace(/\./g, '')] || null;
       }
       if (!monthName) return null;
 
@@ -2679,7 +2708,7 @@
             let v = r[f];
             if (v === "" || v === null || v === undefined) return;
             if (f === "day" && target.day) return; // ชื่อวันที่คำนวณจากวันที่แล้วไม่ต้องทับ
-            if (timeFields.includes(f)) v = routerMidnightTo24(v); // เที่ยงคืน → 24:00:00
+            if (f === "ready") v = routerMidnightTo24(v); // เฉพาะ Ready: เที่ยงคืน → 24:00:00 (ส่วนเวลาอื่น 00:00:00 คงเดิม)
             target[f] = v;
           });
           updated++;
@@ -2688,9 +2717,9 @@
             date: r.date,
             day: r.day || getDayNameFromDateStr(r.date),
             ready: routerMidnightTo24(r.ready || ""),
-            working: routerMidnightTo24(r.working || ""),
-            waiting: routerMidnightTo24(r.waiting || ""),
-            standstill: routerMidnightTo24(r.standstill || ""),
+            working: r.working || "",
+            waiting: r.waiting || "",
+            standstill: r.standstill || "",
             duty: (r.duty === undefined || r.duty === null) ? "" : r.duty,
             selected: true
           };
@@ -3228,17 +3257,22 @@
           wtHours.toFixed(1),
           stHours.toFixed(1)
         ]);
+      });
 
+      // ใส่แผ่นงานสรุปภาพรวม (Summary) เป็นแผ่นงานแรกสุดในไฟล์
+      const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+      summaryWs['!cols'] = [{ wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(workbook, summaryWs, "Summary_Dashboard");
+
+      // ตามด้วยแผ่นงานของแต่ละเครื่องจักร
+      state.machines.forEach(m => {
+        const activeData = m.data.filter(d => d.selected !== false);
         if (activeData.length > 0) {
           const ws = createWorksheetForMachine(m, activeData);
           let sheetName = `${m.name}`.replace(/[/\\?%*:|"<>]/g, '_').substring(0, 31);
           XLSX.utils.book_append_sheet(workbook, ws, sheetName);
         }
       });
-
-      const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
-      summaryWs['!cols'] = [{ wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
-      XLSX.utils.book_append_sheet(workbook, summaryWs, "Summary_Dashboard");
 
       const fileName = `ROUTER_Executive_Summary_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
       saveWorkbookSafely(workbook, fileName);
