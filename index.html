@@ -755,34 +755,122 @@
       }, 1500);
     }
 
-    // Sync in small GET batches so Apps Script returns a verifiable JSON response.
+    let isSyncingInProgress = false;
+
+    // ซิงค์ข้อมูลลง Google Sheets อย่างรวดเร็ว (Ultra-Fast Smart Multi-Machine Sync)
     async function syncAllToGoogleSheets(silent = false) {
+      if (isSyncingInProgress) {
+        console.log("การซิงค์กำลังทำงานอยู่ ข้ามคำขอที่ซ้ำซ้อน");
+        return false;
+      }
+
       const endpoint = (state.googleSheetUrl || "").trim();
-      if (!endpoint) { if (!silent) { showToast("กรุณาตั้งค่า Google Apps Script URL ในหน้า Admin", "error"); openAdminPage(); } return false; }
-      if (!silent) showToast("กำลังซิงค์ข้อมูลไปยัง Google Sheets...", "info");
+      if (!endpoint) {
+        if (!silent) {
+          showToast("กรุณาตั้งค่า Google Apps Script URL ในหน้า Admin", "error");
+          openAdminPage();
+        }
+        return false;
+      }
+
+      isSyncingInProgress = true;
+      if (!silent) showToast("กำลังรวมข้อมูลและซิงค์ไปยัง Google Sheets...", "info");
+
       try {
         let recordsUpdated = 0;
-        const batchSize = 3;
+
+        // 1. กรองเฉพาะเครื่องและวันที่ที่มีข้อมูลตัวเลขจริงเท่านั้น (ไม่ส่งวันว่างเปล่า 29 วันไปให้เสียเวลา)
+        const machinesWithData = [];
         for (const machine of state.machines) {
-          const rows = (machine.data || []).filter(d => d.selected !== false);
-          for (let i = 0; i < rows.length; i += batchSize) {
-            const payload = { timestamp: new Date().toISOString(), machines: [{ name: machine.name, data: rows.slice(i, i + batchSize) }] };
-            const url = new URL(endpoint);
-            url.searchParams.set("action", "sync");
-            url.searchParams.set("payload", JSON.stringify(payload));
-            const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
-            if (!response.ok) throw new Error("HTTP " + response.status);
-            const result = await response.json();
-            if (result.result !== "success") throw new Error(result.message || "Apps Script ปฏิเสธการบันทึก");
-            recordsUpdated += Number(result.recordsUpdated || 0);
+          const rows = (machine.data || []).filter(d => {
+            if (d.selected === false) return false;
+            const hasTime = (d.ready && d.ready !== "00:00:00") || (d.working && d.working !== "00:00:00") || (d.waiting && d.waiting !== "00:00:00") || (d.standstill && d.standstill !== "00:00:00");
+            const hasDuty = d.duty !== "" && d.duty !== null && d.duty !== undefined;
+            return hasTime || hasDuty;
+          });
+
+          if (rows.length > 0) {
+            // ส่งเฉพาะฟิลด์ที่จำเป็น เพื่อให้ขนาด URL กะทัดรัดที่สุด
+            const compactRows = rows.map(r => ({
+              date: r.date,
+              day: r.day,
+              ready: r.ready || "",
+              working: r.working || "",
+              waiting: r.waiting || "",
+              standstill: r.standstill || "",
+              duty: r.duty !== undefined && r.duty !== null ? r.duty : ""
+            }));
+            machinesWithData.push({ name: machine.name, data: compactRows });
           }
         }
-        if (!silent) showToast("ซิงค์สำเร็จ " + recordsUpdated + " รายการ", "success");
-        updateSyncBadge(); return true;
+
+        if (machinesWithData.length === 0) {
+          if (!silent) showToast("ไม่มีข้อมูลใหม่ที่ต้องซิงค์", "info", 3000);
+          updateSyncBadge();
+          return true;
+        }
+
+        // 2. จัดกลุ่มเครื่องจักรหลายๆ เครื่องรวมกันเป็นชุดใหญ่ (Multi-Machine Batch)
+        // แทนที่จะส่งทีละเครื่องหรือทีละ 3 วัน เราแพ็ครวมหลายเครื่องพร้อมกันในคำขอเดียว (ไม่เกิน 3,200 ตัวอักษรต่อ URL)
+        const preparedList = [];
+        for (const mItem of machinesWithData) {
+          if (mItem.data.length > 15) {
+            // กรณีเครื่องเดียวมีข้อมูลมากกว่า 15 วัน ให้แบ่งก้อนละ 15 วัน
+            for (let i = 0; i < mItem.data.length; i += 15) {
+              preparedList.push({ name: mItem.name, data: mItem.data.slice(i, i + 15) });
+            }
+          } else {
+            preparedList.push(mItem);
+          }
+        }
+
+        const batches = [];
+        let currentBatch = [];
+        let currentLen = 0;
+
+        for (const item of preparedList) {
+          const itemStr = JSON.stringify(item);
+          if (currentBatch.length > 0 && (currentLen + itemStr.length) > 3000) {
+            batches.push(currentBatch);
+            currentBatch = [item];
+            currentLen = itemStr.length;
+          } else {
+            currentBatch.push(item);
+            currentLen += itemStr.length;
+          }
+        }
+        if (currentBatch.length > 0) {
+          batches.push(currentBatch);
+        }
+
+        // 3. ส่งข้อมูลในแต่ละ Batch (โดยปกติ 10-20 เครื่องจะถูกส่งพร้อมกันหมดใน 1-2 คำขอเท่านั้น!)
+        for (let b = 0; b < batches.length; b++) {
+          const payload = {
+            timestamp: new Date().toISOString(),
+            machines: batches[b]
+          };
+
+          const url = new URL(endpoint);
+          url.searchParams.set("action", "sync");
+          url.searchParams.set("payload", JSON.stringify(payload));
+
+          const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          const result = await response.json();
+          if (result.result !== "success") throw new Error(result.message || "Apps Script ปฏิเสธการบันทึก");
+          recordsUpdated += Number(result.recordsUpdated || 0);
+        }
+
+        if (!silent) showToast(`ซิงค์สำเร็จรวม ${recordsUpdated} รายการ (เสร็จสิ้นทั้งหมด)`, "success", 4000);
+        updateSyncBadge();
+        return true;
+
       } catch (err) {
         console.error("Google Sheet Sync Error:", err);
         if (!silent) showToast("ซิงค์ไม่สำเร็จ: " + err.message, "error", 7000);
         return false;
+      } finally {
+        isSyncingInProgress = false;
       }
     }
 
@@ -3238,21 +3326,9 @@
       return null;
     }
 
-    // ตรวจสอบว่าข้อมูลที่บันทึกไว้ในเครื่องเป็นของเดือนก่อนหน้าหรือไม่ แล้วแจ้งเตือนผู้ใช้
+    // ตรวจสอบสถานะข้อมูลเพื่อรองรับการใช้งานแบบหลายเดือน (Multi-Month) พร้อมกัน
     function checkSavedMonthMismatch() {
-      const now = new Date();
-      const currentKey = `${now.getFullYear()}-${now.getMonth()}`;
-      let foundMismatch = false;
-      state.machines.forEach(m => {
-        if (!m || !Array.isArray(m.data) || m.data.length === 0) return;
-        const savedKey = getMonthKeyFromDateStr(m.data[0].date);
-        if (savedKey && savedKey !== currentKey) {
-          foundMismatch = true;
-        }
-      });
-      if (foundMismatch) {
-        showToast(`ข้อมูลที่บันทึกไว้เป็นของเดือนก่อนหน้า ไม่ตรงกับเดือนปัจจุบัน — หากต้องการฟอร์มเดือนใหม่ให้กดปุ่ม "รีเซ็ตข้อมูล"`, "info", 7000);
-      }
+      // รองรับข้อมูลต่อเนื่องหลายเดือนอย่างเต็มรูปแบบ (ไม่มีการแจ้งเตือนรบกวนให้รีเซ็ต)
     }
 
     // Helper: แปลงข้อความ JSON จาก AI ให้ปลอดภัย (ตัด Code fence ``` และข้อความที่ปนมา)

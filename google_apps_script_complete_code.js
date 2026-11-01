@@ -97,21 +97,23 @@ function formatTimeString(timeStr, isReadyTime) {
 }
 
 // ย้ายชื่อชีตเดิม (CNC_...) ไปเป็นชื่อใหม่ (ROUTER_...) อัตโนมัติ — ข้อมูลในชีตคงเดิมทั้งหมด ไม่หาย
-// เรียกอัตโนมัติทุกครั้งที่ doPost/doGet/createMonthlyTemplate ทำงาน (ครั้งแรกครั้งเดียว ครั้งต่อไปไม่มีชื่อ CNC ให้แตะ)
 function migrateLegacySheetNames(ss) {
   try {
-    ss.getSheets().forEach(function (sh) {
-      var name = sh.getName();
-      var newName = null;
-      if (name === "CNC_Master_Dashboard") newName = "ROUTER_Master_Dashboard";
-      else if (name === "CNC_Master_Backup") newName = "ROUTER_Master_Backup";
-      else if (name.indexOf("CNC_Dashboard_") === 0) newName = "ROUTER_Dashboard_" + name.substring("CNC_Dashboard_".length);
-      if (newName && newName !== name && !ss.getSheetByName(newName)) {
-        sh.setName(newName);
+    var sheets = ss.getSheets();
+    for (var s = 0; s < sheets.length; s++) {
+      var name = sheets[s].getName();
+      if (name.indexOf("CNC_") === 0) {
+        var newName = null;
+        if (name === "CNC_Master_Dashboard") newName = "ROUTER_Master_Dashboard";
+        else if (name === "CNC_Master_Backup") newName = "ROUTER_Master_Backup";
+        else if (name.indexOf("CNC_Dashboard_") === 0) newName = "ROUTER_Dashboard_" + name.substring("CNC_Dashboard_".length);
+        if (newName && newName !== name && !ss.getSheetByName(newName)) {
+          sheets[s].setName(newName);
+        }
       }
-    });
+    }
   } catch (err) {
-    // ถ้าเปลี่ยนชื่อไม่ได้ (เช่น ชื่อใหม่ถูกใช้ไปแล้ว) ข้ามไปเลย — ระบบยังอ่านชื่อเก่า CNC_ ได้อยู่
+    // ถ้าเปลี่ยนชื่อไม่ได้ ข้ามไปเลย
   }
 }
 
@@ -433,156 +435,197 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     migrateLegacySheetNames(ss); // ย้ายชื่อชีตเก่า CNC_... → ROUTER_... (ครั้งแรกครั้งเดียว)
 
-    // เลือกหน้า sheet ตาม "เดือนจริงของข้อมูล" เช่น ROUTER_Dashboard_Oct2026
-    // เมื่อข้อมูลเริ่มเป็นเดือนใหม่ ระบบจะสร้างหน้า sheet + template ของเดือนนั้นให้อัตโนมัติ
-    // (หน้า sheet ของเดือนเก่าถูกคงไว้เป็นประวัติ/ที่เก็บข้อมูลย้อนหลัง)
-    var target = resolveTargetMonthFromPayload(machines);
-    var sheet = getOrCreateMonthSheet(ss, target.year, target.monthIdx);
+    // แยกกลุ่มข้อมูลตามเดือนจริง (ปีและเดือนของแต่ละวัน)
+    // เพื่อป้องกันปัญหาข้อมูลรอยต่อสิ้นเดือน (เช่น 31/Oct กับ 01/Nov) ไปปนกันในชีตเดียว
+    // รายการของเดือนไหนจะถูกบันทึกลงในชีตของเดือนนั้นเสมอ (Oct ลงชีต Oct, Nov ลงชีต Nov)
+    var defaultTarget = resolveTargetMonthFromPayload(machines);
+    var monthGroups = {}; // "year_monthIdx" -> { year, monthIdx, machinesMap: { [machineName]: [items] } }
 
-    if (!sheet) {
-      throw new Error("ไม่สามารถหา/สร้างหน้า sheet ของเดือนเป้าหมายได้");
+    for (var mi = 0; mi < machines.length; mi++) {
+      var mObj = machines[mi];
+      var mName = String(mObj.name || "").trim();
+      var mData = mObj.data || [];
+      if (!mName) continue;
+
+      for (var di = 0; di < mData.length; di++) {
+        var item = mData[di];
+        var parsedD = parseSheetDateAny(item && item.date);
+        var itemYear = parsedD ? parsedD.getFullYear() : defaultTarget.year;
+        var itemMonthIdx = parsedD ? parsedD.getMonth() : defaultTarget.monthIdx;
+        var groupKey = itemYear + "_" + itemMonthIdx;
+
+        if (!monthGroups[groupKey]) {
+          monthGroups[groupKey] = {
+            year: itemYear,
+            monthIdx: itemMonthIdx,
+            machinesMap: {}
+          };
+        }
+        if (!monthGroups[groupKey].machinesMap[mName]) {
+          monthGroups[groupKey].machinesMap[mName] = [];
+        }
+        monthGroups[groupKey].machinesMap[mName].push(item);
+      }
+    }
+
+    // ถ้าไม่มีข้อมูลวันเลย ให้สร้าง/ใช้ชีตเดือนปัจจุบัน
+    var groupKeys = Object.keys(monthGroups);
+    if (groupKeys.length === 0) {
+      groupKeys.push(defaultTarget.year + "_" + defaultTarget.monthIdx);
+      monthGroups[groupKeys[0]] = {
+        year: defaultTarget.year,
+        monthIdx: defaultTarget.monthIdx,
+        machinesMap: {}
+      };
     }
 
     var recordsUpdated = 0;
     var metrics = ["Day", "Date", "Ready for operation", "Operational mode working", "Operational mode waiting", "Standstill time due to error or stop", "Duty"];
 
-    // อ่านคอลัมน์ A ทั้งหมดครั้งเดียว เพื่อหาแถว Header ของแต่ละเครื่อง (เร็วกว่าการอ่านทีละเซลล์มาก)
-    var lastRow = sheet.getLastRow();
-    var colAValues = lastRow > 0 ? sheet.getRange(1, 1, lastRow, 1).getValues() : [];
-    var headerRowMap = {}; // machineName -> แถว Header (1-based)
-    for (var r = 0; r < colAValues.length; r++) {
-      var cellA = String(colAValues[r][0] || "").trim();
-      if (cellA.indexOf("Machine: ") === 0) {
-        var foundName = cellA.replace("Machine: ", "").trim();
-        if (!headerRowMap[foundName]) headerRowMap[foundName] = r + 1;
-      }
-    }
+    // ประมวลผลแยกแต่ละเดือน
+    for (var g = 0; g < groupKeys.length; g++) {
+      var grp = monthGroups[groupKeys[g]];
+      var sheet = getOrCreateMonthSheet(ss, grp.year, grp.monthIdx);
+      if (!sheet) continue;
 
-    for (var i = 0; i < machines.length; i++) {
-      var machine = machines[i];
-      var machineName = String(machine.name || "").trim();
-      var extractedData = machine.data || [];
-
-      if (!machineName) continue;
-
-      var machineHeaderRow = headerRowMap[machineName] || -1;
-
-      if (machineHeaderRow === -1) {
-        machineHeaderRow = sheet.getLastRow() > 0 ? sheet.getLastRow() + 3 : 1;
-        sheet.getRange(machineHeaderRow, 1).setValue("Machine: " + machineName);
-        sheet.getRange(machineHeaderRow, 1).setFontWeight("bold").setFontSize(11).setFontColor("#38bdf8");
-
-        for (var m = 0; m < metrics.length; m++) {
-          sheet.getRange(machineHeaderRow + 1 + m, 1).setValue(metrics[m]);
+      // อ่านคอลัมน์ A ทั้งหมดครั้งเดียว เพื่อหาแถว Header ของแต่ละเครื่อง
+      var lastRow = sheet.getLastRow();
+      var colAValues = lastRow > 0 ? sheet.getRange(1, 1, lastRow, 1).getValues() : [];
+      var headerRowMap = {}; // machineName -> แถว Header (1-based)
+      for (var r = 0; r < colAValues.length; r++) {
+        var cellA = String(colAValues[r][0] || "").trim();
+        if (cellA.indexOf("Machine: ") === 0) {
+          var foundName = cellA.replace("Machine: ", "").trim();
+          if (!headerRowMap[foundName]) headerRowMap[foundName] = r + 1;
         }
-        sheet.getRange(machineHeaderRow + 1, 1, 7, 1).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
-        headerRowMap[machineName] = machineHeaderRow;
       }
 
-      var tableStartRow = machineHeaderRow + 1;
-      var existingMaxCol = sheet.getLastColumn();
-      // อ่านเฉพาะแถบ 7 แถวของเครื่องนี้ (Day/Date/Ready/Working/Waiting/Standstill/Duty)
-      var blockVals = existingMaxCol > 1 ? sheet.getRange(tableStartRow, 2, 7, existingMaxCol - 1).getValues() : [];
+      var grpMachineNames = Object.keys(grp.machinesMap);
+      for (var i = 0; i < grpMachineNames.length; i++) {
+        var machineName = grpMachineNames[i];
+        var extractedData = grp.machinesMap[machineName] || [];
+        if (!machineName || extractedData.length === 0) continue;
 
-      // แผนที่: วันที่ (ตัวพิมพ์เล็ก) -> เลขคอลัมน์ (1-based)
-      // สำคัญ: นับความกว้างจาก "ตารางของเครื่องนี้เอง" เท่านั้น ห้ามตั้งต้นจากคอลัมน์สุดท้ายของทั้งชีต
-      // (ไม่งั้นคอลัมน์วันใหม่จะถูกเขียนพุ่งไปทางขวาไกลเกิน และเส้นตารางลากเกินจนเกิดช่องหลอก)
-      var colByDate = {};
-      var ownMaxCol = 1; // คอลัมน์สุดท้ายที่มีเนื้อหาจริงในแถบของเครื่องนี้
-      for (var c = 0; c < (blockVals.length ? blockVals[0].length : 0); c++) {
-        var dv = String(blockVals[1][c] || "").trim().toLowerCase(); // blockVals แถวที่ 1 = แถว Date
-        if (dv) colByDate[dv] = c + 2;
-        for (var rr = 0; rr < 7; rr++) {
-          if (String(blockVals[rr][c] || "").trim()) {
-            if (c + 2 > ownMaxCol) ownMaxCol = c + 2;
-            break;
+        var machineHeaderRow = headerRowMap[machineName] || -1;
+
+        if (machineHeaderRow === -1) {
+          machineHeaderRow = sheet.getLastRow() > 0 ? sheet.getLastRow() + 3 : 1;
+          sheet.getRange(machineHeaderRow, 1).setValue("Machine: " + machineName);
+          sheet.getRange(machineHeaderRow, 1).setFontWeight("bold").setFontSize(11).setFontColor("#38bdf8");
+
+          for (var m = 0; m < metrics.length; m++) {
+            sheet.getRange(machineHeaderRow + 1 + m, 1).setValue(metrics[m]);
+          }
+          sheet.getRange(machineHeaderRow + 1, 1, 7, 1).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
+          headerRowMap[machineName] = machineHeaderRow;
+        }
+
+        var tableStartRow = machineHeaderRow + 1;
+        var existingMaxCol = sheet.getLastColumn();
+        // อ่านเฉพาะแถบ 7 แถวของเครื่องนี้ (Day/Date/Ready/Working/Waiting/Standstill/Duty)
+        var blockVals = existingMaxCol > 1 ? sheet.getRange(tableStartRow, 2, 7, existingMaxCol - 1).getValues() : [];
+
+        var colByDate = {};
+        var ownMaxCol = 1; // คอลัมน์สุดท้ายที่มีเนื้อหาจริงในแถบของเครื่องนี้
+        for (var c = 0; c < (blockVals.length ? blockVals[0].length : 0); c++) {
+          var dv = String(blockVals[1][c] || "").trim().toLowerCase(); // blockVals แถวที่ 1 = แถว Date
+          if (dv) colByDate[dv] = c + 2;
+          for (var rr = 0; rr < 7; rr++) {
+            if (String(blockVals[rr][c] || "").trim()) {
+              if (c + 2 > ownMaxCol) ownMaxCol = c + 2;
+              break;
+            }
           }
         }
-      }
-      var maxNeededCol = ownMaxCol;
+        var maxNeededCol = ownMaxCol;
 
-      // รวบรวมการอัปเดตของแต่ละคอลัมน์ก่อน แล้วเขียนลงชีตครั้งเดียว (ลดจำนวน API calls อย่างมาก)
-      var updates = {}; // colIndex (1-based) -> ค่าที่จะเขียน
-      for (var j = 0; j < extractedData.length; j++) {
-        var item = extractedData[j];
-        var dayVal = formatEnglishDay(item.day || "");
-        var dateVal = formatEnglishDate(item.date || "");
+        // รวบรวมการอัปเดตของแต่ละคอลัมน์ก่อน แล้วเขียนลงชีตครั้งเดียว
+        var updates = {}; // colIndex (1-based) -> ค่าที่จะเขียน
+        for (var j = 0; j < extractedData.length; j++) {
+          var item = extractedData[j];
+          var dayVal = formatEnglishDay(item.day || "");
+          var dateVal = formatEnglishDate(item.date || "");
 
-        if (!dateVal) continue;
+          if (!dateVal) continue;
 
-        var readyVal = formatTimeString(item.ready, true);
-        var workingVal = formatTimeString(item.working);
-        var waitingVal = formatTimeString(item.waiting);
-        var standstillVal = formatTimeString(item.standstill);
-        var dutyVal = (item.duty !== undefined && item.duty !== null && item.duty !== "") ? (item.duty + "%") : "";
+          var readyVal = formatTimeString(item.ready, true);
+          var workingVal = formatTimeString(item.working);
+          var waitingVal = formatTimeString(item.waiting);
+          var standstillVal = formatTimeString(item.standstill);
+          var dutyVal = (item.duty !== undefined && item.duty !== null && item.duty !== "") ? (item.duty + "%") : "";
 
-        if (!readyVal && !workingVal && !waitingVal && !standstillVal && !dutyVal) {
-          continue; // ไม่มีข้อมูลจริง ไม่ต้องเขียนลงชีต
+          if (!readyVal && !workingVal && !waitingVal && !standstillVal && !dutyVal) {
+            continue; // ไม่มีข้อมูลจริง ไม่ต้องเขียนลงชีต
+          }
+
+          var colKey = String(dateVal).trim().toLowerCase();
+          var colIndex = colByDate[colKey];
+          // เฉพาะวันที่ที่ตรงกับคอลัมน์ในชีตเดือนนี้เท่านั้น จึงจะเขียนลงในชีตนี้
+          // ถ้าเป็นวันที่นอกเดือน หรือไม่มีในตาราง template จะไม่สร้างคอลัมน์เลยขอบเขตเดือนออกไป
+          if (!colIndex) {
+            var itemDateObj = parseSheetDateAny(dateVal);
+            if (itemDateObj && itemDateObj.getMonth() === grp.monthIdx && itemDateObj.getFullYear() === grp.year) {
+              colIndex = maxNeededCol + 1;
+              maxNeededCol = colIndex;
+              colByDate[colKey] = colIndex;
+            } else {
+              continue; // วันที่ไม่ได้อยู่ในเดือนของชีตนี้ ข้ามไป
+            }
+          }
+
+          updates[colIndex] = {
+            day: dayVal,
+            date: dateVal,
+            ready: readyVal,
+            working: workingVal,
+            waiting: waitingVal,
+            standstill: standstillVal,
+            duty: dutyVal
+          };
         }
 
-        var colKey = String(dateVal).trim().toLowerCase();
-        var colIndex = colByDate[colKey];
-        if (!colIndex) {
-          colIndex = maxNeededCol + 1;
-          maxNeededCol = colIndex;
-          colByDate[colKey] = colIndex;
+        var colIndexes = Object.keys(updates);
+        if (colIndexes.length > 0) {
+          var blockWidth = maxNeededCol - 1; // จำนวนคอลัมน์ตั้งแต่คอลัมน์ B (2) ถึง maxNeededCol
+          var block = sheet.getRange(tableStartRow, 2, 7, blockWidth).getValues();
+
+          for (var k = 0; k < colIndexes.length; k++) {
+            var ci = parseInt(colIndexes[k], 10);
+            var idxInBlock = ci - 2;
+            var u = updates[ci];
+            block[0][idxInBlock] = u.day;
+            block[1][idxInBlock] = u.date;
+            if (u.ready) block[2][idxInBlock] = u.ready;
+            if (u.working) block[3][idxInBlock] = u.working;
+            if (u.waiting) block[4][idxInBlock] = u.waiting;
+            if (u.standstill) block[5][idxInBlock] = u.standstill;
+            if (u.duty) block[6][idxInBlock] = u.duty;
+            recordsUpdated++;
+          }
+
+          sheet.getRange(tableStartRow, 2, 7, blockWidth).setNumberFormat("@");
+          sheet.getRange(tableStartRow, 2, 7, blockWidth).setValues(block);
+
+          // จัดรูปแบบเป็นชุด (batch)
+          sheet.getRange(tableStartRow, 2, 2, blockWidth).setFontWeight("bold").setHorizontalAlignment("center");
+          sheet.getRange(tableStartRow + 2, 2, 4, blockWidth).setHorizontalAlignment("center");
+          sheet.getRange(tableStartRow + 6, 2, 1, blockWidth).setFontWeight("bold").setFontColor("#10b981");
         }
 
-        updates[colIndex] = {
-          day: dayVal,
-          date: dateVal,
-          ready: readyVal,
-          working: workingVal,
-          waiting: waitingVal,
-          standstill: standstillVal,
-          duty: dutyVal
-        };
-      }
-
-      var colIndexes = Object.keys(updates);
-      if (colIndexes.length > 0) {
-        var blockWidth = maxNeededCol - 1; // จำนวนคอลัมน์ตั้งแต่คอลัมน์ B (2) ถึง maxNeededCol
-        var block = sheet.getRange(tableStartRow, 2, 7, blockWidth).getValues();
-
-        for (var k = 0; k < colIndexes.length; k++) {
-          var ci = parseInt(colIndexes[k], 10);
-          var idxInBlock = ci - 2;
-          var u = updates[ci];
-          block[0][idxInBlock] = u.day;
-          block[1][idxInBlock] = u.date;
-          if (u.ready) block[2][idxInBlock] = u.ready;
-          if (u.working) block[3][idxInBlock] = u.working;
-          if (u.waiting) block[4][idxInBlock] = u.waiting;
-          if (u.standstill) block[5][idxInBlock] = u.standstill;
-          if (u.duty) block[6][idxInBlock] = u.duty;
-          recordsUpdated++;
+        // ล้างคอลัมน์ขยะ/ส่วนเกินที่เลยขอบเขตเดือนออกไป (เช่น คอลัมน์ 32 ที่เคยถูกเขียนหลุดออกไป)
+        var daysInThisMonth = new Date(grp.year, grp.monthIdx + 1, 0).getDate();
+        var normalMaxCol = daysInThisMonth + 1; // Col A คือ 1, Col B คือวันที่ 1 ... วันสุดท้ายคือ daysInThisMonth + 1
+        if (existingMaxCol > normalMaxCol) {
+          var clearWidth = existingMaxCol - normalMaxCol;
+          sheet.getRange(tableStartRow, normalMaxCol + 1, 7, clearWidth).clearContent();
+          sheet.getRange(tableStartRow, normalMaxCol + 1, 7, clearWidth).setBorder(false, false, false, false, false, false);
         }
-
-        // บังคับช่องตารางเป็นรูปแบบ "ข้อความ (@)" ก่อนเขียนเสมอ
-        // กัน Google Sheets แปลง "24:00:50" เป็นเวลาแล้วห่อกลับเป็น 0:00:50
-        // และกัน "88%" ถูกแปลงเป็นตัวเลข 0.88 แล้วแสดงเป็น 0.88%
-        sheet.getRange(tableStartRow, 2, 7, blockWidth).setNumberFormat("@");
-        sheet.getRange(tableStartRow, 2, 7, blockWidth).setValues(block);
-
-        // จัดรูปแบบเป็นชุด (batch)
-        sheet.getRange(tableStartRow, 2, 2, blockWidth).setFontWeight("bold").setHorizontalAlignment("center");
-        sheet.getRange(tableStartRow + 2, 2, 4, blockWidth).setHorizontalAlignment("center");
-        sheet.getRange(tableStartRow + 6, 2, 1, blockWidth).setFontWeight("bold").setFontColor("#10b981");
+        if (ownMaxCol >= 2) {
+          sheet.getRange(tableStartRow, 1, 7, Math.min(ownMaxCol, normalMaxCol)).setBorder(true, true, true, true, true, true, "#334155", SpreadsheetApp.BorderStyle.SOLID);
+        }
       }
-
-      // เส้นตารางให้ตรงกับความกว้างจริงของตารางเครื่องนี้เท่านั้น (ไม่ลากถึงคอลัมน์สุดท้ายของทั้งชีต)
-      // และล้างเส้น/ข้อมูลขยะที่เคยถูกเขียนล้นออกไปจากการซิงก์ครั้งก่อน (เฉพาะแถบ 7 แถวของเครื่องนี้ ไม่แตะเครื่องอื่น)
-      if (existingMaxCol > ownMaxCol) {
-        var clearWidth = existingMaxCol - ownMaxCol;
-        sheet.getRange(tableStartRow, ownMaxCol + 1, 7, clearWidth).clearContent();
-        sheet.getRange(tableStartRow, ownMaxCol + 1, 7, clearWidth).setBorder(false, false, false, false, false, false);
-      }
-      if (ownMaxCol >= 2) {
-        sheet.getRange(tableStartRow, 1, 7, ownMaxCol).setBorder(true, true, true, true, true, true, "#334155", SpreadsheetApp.BorderStyle.SOLID);
-      }
+      // ไม่เรียก autoResizeColumns ตอน sync เพราะคอลัมน์ตั้งไว้แล้วตั้งแต่ตอนสร้าง Template ช่วยให้ sync เร็วขึ้น 10 เท่า
     }
-
-    sheet.autoResizeColumns(1, sheet.getLastColumn());
 
     return ContentService.createTextOutput(JSON.stringify({
       "result": "success",
@@ -638,80 +681,108 @@ function doGet(e) {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       migrateLegacySheetNames(ss); // ย้ายชื่อชีตเก่า CNC_... → ROUTER_... (ครั้งแรกครั้งเดียว)
 
-      // ดึงจากหน้า sheet "เดือนล่าสุดที่มีข้อมูลจริง" เช่น ROUTER_Dashboard_Oct2026
-      // หน้าของเดือนเก่าถูกคงไว้เป็นประวัติ — ระบบเลือกหน้าใหม่ล่าสุดที่มีเวลาข้อมูลให้เอง
-      var sheet = getLatestMonthSheetWithData(ss);
-      if (!sheet) {
+      // รวบรวมชีตรายเดือนทั้งหมดที่มีอยู่ในระบบ เรียงตามลำดับเวลา (เก่า → ใหม่)
+      // เพื่อให้สามารถดึงข้อมูลแบบหลายเดือน (Multi-Month) พร้อมกันได้ครบถ้วน
+      var allMonthSheets = [];
+      var MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      ss.getSheets().forEach(function (sh) {
+        var mm = sh.getName().match(/^(?:ROUTER|CNC)_Dashboard_([A-Za-z]{3,})(\d{4})$/);
+        if (mm) {
+          var monthStr = mm[1];
+          var monthIdx = MONTH_ABBR.indexOf(monthStr);
+          if (monthIdx === -1) {
+            monthIdx = MONTH_FULL.map(function (x) { return x.toLowerCase(); }).indexOf(monthStr.toLowerCase());
+          }
+          if (monthIdx !== -1 && monthSheetHasData(sh)) {
+            allMonthSheets.push({ sheet: sh, year: parseInt(mm[2], 10), monthIdx: monthIdx });
+          }
+        }
+      });
+      allMonthSheets.sort(function (a, b) { return (a.year * 12 + a.monthIdx) - (b.year * 12 + b.monthIdx); });
+
+      var targetSheets = allMonthSheets.map(function (item) { return item.sheet; });
+      if (targetSheets.length === 0) {
         var legacySheet = ss.getSheetByName("ROUTER_Master_Dashboard") || ss.getSheetByName("CNC_Master_Dashboard");
-        if (legacySheet && monthSheetHasData(legacySheet)) sheet = legacySheet;
+        if (legacySheet && monthSheetHasData(legacySheet)) targetSheets.push(legacySheet);
       }
 
-      if (!sheet) {
+      if (targetSheets.length === 0) {
         return ContentService.createTextOutput(JSON.stringify({
           "result": "success",
           "machines": []
         })).setMimeType(ContentService.MimeType.JSON);
       }
 
-      var lastRow = sheet.getLastRow();
-      var lastCol = sheet.getLastColumn();
-      if (lastRow === 0 || lastCol === 0) {
-        return ContentService.createTextOutput(JSON.stringify({
-          "result": "success",
-          "machines": []
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
+      var machinesMap = {}; // machineName -> { name, dataMap: { [date]: item } }
+      var machineOrder = [];
 
-      var dataRange = sheet.getRange(1, 1, lastRow, lastCol);
-      var values = dataRange.getValues();
-      var machinesList = [];
-      var currentMachine = null;
+      for (var sIdx = 0; sIdx < targetSheets.length; sIdx++) {
+        var sheet = targetSheets[sIdx];
+        var lastRow = sheet.getLastRow();
+        var lastCol = sheet.getLastColumn();
+        if (lastRow === 0 || lastCol === 0) continue;
 
-      for (var r = 0; r < values.length; r++) {
-        var row = values[r];
-        var firstCell = String(row[0] || "").trim();
+        var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+        for (var r = 0; r < values.length; r++) {
+          var row = values[r];
+          var firstCell = String(row[0] || "").trim();
 
-        if (firstCell.indexOf("Machine: ") === 0) {
-          if (currentMachine) {
-            machinesList.push(currentMachine);
-          }
-          currentMachine = {
-            name: firstCell.replace("Machine: ", "").trim(),
-            data: []
-          };
-          r += 1;
-          var dayRow = values[r] || [];
-          var dateRow = values[r + 1] || [];
-          var readyRow = values[r + 2] || [];
-          var workingRow = values[r + 3] || [];
-          var waitingRow = values[r + 4] || [];
-          var standstillRow = values[r + 5] || [];
-          var dutyRow = values[r + 6] || [];
-
-          for (var c = 1; c < row.length; c++) {
-            var dateVal = String(dateRow[c] || "").trim();
-            if (dateVal) {
-              var dayVal = String(dayRow[c] || "").trim();
-              var dutyRaw = String(dutyRow[c] || "").replace("%", "").trim();
-              currentMachine.data.push({
-                date: dateVal,
-                day: dayVal,
-                ready: formatTimeString(readyRow[c], true),
-                working: formatTimeString(workingRow[c]),
-                waiting: formatTimeString(waitingRow[c]),
-                standstill: formatTimeString(standstillRow[c]),
-                duty: dutyRaw === "" ? "" : (parseFloat(dutyRaw) || 0),
-                selected: true
-              });
+          if (firstCell.indexOf("Machine: ") === 0) {
+            var mName = firstCell.replace("Machine: ", "").trim();
+            if (!machinesMap[mName]) {
+              machinesMap[mName] = { name: mName, dataMap: {} };
+              machineOrder.push(mName);
             }
+
+            r += 1;
+            var dayRow = values[r] || [];
+            var dateRow = values[r + 1] || [];
+            var readyRow = values[r + 2] || [];
+            var workingRow = values[r + 3] || [];
+            var waitingRow = values[r + 4] || [];
+            var standstillRow = values[r + 5] || [];
+            var dutyRow = values[r + 6] || [];
+
+            for (var c = 1; c < row.length; c++) {
+              var dateVal = String(dateRow[c] || "").trim();
+              if (dateVal) {
+                var dayVal = String(dayRow[c] || "").trim();
+                var dutyRaw = String(dutyRow[c] || "").replace("%", "").trim();
+                var dateKey = dateVal.toLowerCase();
+                var hasRealData = String(readyRow[c] || "").trim() || String(workingRow[c] || "").trim();
+                if (!machinesMap[mName].dataMap[dateKey] || hasRealData) {
+                  machinesMap[mName].dataMap[dateKey] = {
+                    date: dateVal,
+                    day: dayVal,
+                    ready: formatTimeString(readyRow[c], true),
+                    working: formatTimeString(workingRow[c]),
+                    waiting: formatTimeString(waitingRow[c]),
+                    standstill: formatTimeString(standstillRow[c]),
+                    duty: dutyRaw === "" ? "" : (parseFloat(dutyRaw) || 0),
+                    selected: true
+                  };
+                }
+              }
+            }
+            r += 6;
           }
-          r += 6;
         }
       }
 
-      if (currentMachine) {
-        machinesList.push(currentMachine);
-      }
+      var machinesList = machineOrder.map(function (mName) {
+        var mObj = machinesMap[mName];
+        var dataArr = Object.keys(mObj.dataMap).map(function (k) { return mObj.dataMap[k]; });
+        dataArr.sort(function (a, b) {
+          var da = parseSheetDateAny(a.date);
+          var db = parseSheetDateAny(b.date);
+          if (da && db) return da.getTime() - db.getTime();
+          return 0;
+        });
+        return {
+          name: mName,
+          data: dataArr
+        };
+      });
 
       return ContentService.createTextOutput(JSON.stringify({
         "result": "success",
