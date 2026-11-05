@@ -185,9 +185,20 @@
 
     <!-- Machine Tabs Bar -->
     <div class="no-print bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 overflow-hidden">
-      <!-- Scrollable Tabs List -->
-      <div id="machineTabsContainer" class="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 pt-0.5 px-1 flex-1 w-full">
-        <!-- Tabs rendered dynamically -->
+      <!-- Single Machine Selection Listbox -->
+      <div class="flex items-center gap-2 flex-1 w-full min-w-0">
+        <button id="summaryDashboardBtn" onclick="switchTab('summary')" class="px-3.5 py-2 rounded-xl font-bold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-sm border shrink-0 bg-gradient-to-r from-sky-500 to-brand-500 text-white border-sky-400" title="กลับไปหน้าแดชบอร์ดสรุปผลรวม">
+          <i class="fa-solid fa-chart-pie"></i> แดชบอร์ดสรุปผลรวม
+        </button>
+        <label for="machineSelectList" class="text-slate-400 font-semibold text-xs whitespace-nowrap flex items-center gap-1.5 shrink-0">
+          <i class="fa-solid fa-gears"></i> เลือกเครื่อง:
+        </label>
+        <select id="machineSelectList" onchange="onMachineSelectChange()" class="flex-1 min-w-0 bg-slate-950 border border-slate-700 text-sky-400 font-semibold text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-sky-500 transition">
+          <!-- Options rendered dynamically -->
+        </select>
+        <button id="removeActiveMachineBtn" onclick="removeActiveMachine()" class="hidden px-3 py-2 bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-semibold rounded-xl transition shrink-0" title="ลบเครื่องที่เลือกอยู่">
+          <i class="fa-solid fa-trash-can mr-1 text-xs"></i>ลบเครื่องนี้
+        </button>
       </div>
 
       <!-- Add Machine Selector Dropdown -->
@@ -237,8 +248,18 @@
           <div class="flex items-center gap-3 mb-5"><div class="w-10 h-10 rounded-xl bg-violet-500/15 text-violet-300 grid place-items-center"><i class="fa-solid fa-wand-magic-sparkles text-xl"></i></div><div><h3 class="text-white font-bold text-lg">AI / API Settings</h3><p class="text-slate-400 text-xs">ตั้งค่า Gemini API สำหรับ OCR ด้วย AI</p></div></div>
           <label class="block text-xs font-semibold text-slate-300 mb-2" for="adminGeminiKey">Gemini API Key</label>
           <div class="flex gap-2"><input id="adminGeminiKey" type="password" autocomplete="off" placeholder="วาง Gemini API Key" class="min-w-0 flex-1 rounded-xl bg-slate-950 border border-slate-700 focus:border-violet-400 outline-none text-white text-sm px-3 py-3"><button type="button" onclick="toggleAdminKeyVisibility()" class="px-4 rounded-xl bg-slate-800 text-slate-200"><i class="fa-solid fa-eye"></i></button></div>
-          <label class="block text-xs font-semibold text-slate-300 mt-4 mb-2" for="adminGeminiModel">Gemini Model (ไม่บังคับ)</label>
-          <input id="adminGeminiModel" type="text" placeholder="เช่น gemini-2.0-flash" class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-violet-400 outline-none text-white text-sm px-3 py-3">
+          <label class="block text-xs font-semibold text-slate-300 mt-4 mb-2" for="adminGeminiModel">Gemini Model</label>
+          <select id="adminGeminiModel" class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-violet-400 outline-none text-white text-sm px-3 py-3">
+            <option value="">— Auto (ลองตามลำดับอัตโนมัติ) —</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+            <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
+            <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+          </select>
+          <p class="mt-1.5 text-[11px] text-slate-500">เลือกโมเดลจากรายการ หรือเลือก Auto เพื่อให้ระบบลองตามลำดับเอง</p>
           <button onclick="saveAdminSettings()" class="w-full mt-4 rounded-xl py-3 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold"><i class="fa-solid fa-floppy-disk mr-2"></i>บันทึกการตั้งค่าทั้งหมด</button>
           <div class="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200/80 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-2"></i>คำเตือน: ค่า API Key จะถูกเก็บใน Local Storage ของเบราว์เซอร์นี้ ไม่ควรใส่ API Key ส่วนตัวบนเครื่องสาธารณะหรือเปิดเผยไฟล์ให้ผู้อื่น</div>
           <button onclick="resetAllDemoData()" class="w-full mt-4 rounded-xl py-3 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold"><i class="fa-solid fa-rotate-left mr-2"></i>รีเซ็ตข้อมูลทั้งหมด (ล้างข้อมูลทุกเครื่อง)</button>
@@ -638,7 +659,27 @@
         document.getElementById('adminSheetUrl').value = state.googleSheetUrl || '';
         document.getElementById('adminAutoSync').checked = !!state.autoSync;
         document.getElementById('adminGeminiKey').value = state.geminiApiKey || '';
-        document.getElementById('adminGeminiModel').value = state.geminiModel || '';
+        // เติมรายการโมเดลใน listbox จาก GEMINI_MODEL_CANDIDATES (และรองรับค่าที่เคยบันทึกไว้)
+        const modelSelect = document.getElementById('adminGeminiModel');
+        const savedModel = (state.geminiModel || '').trim();
+        modelSelect.innerHTML = '';
+        const autoOpt = document.createElement('option');
+        autoOpt.value = '';
+        autoOpt.textContent = '— Auto (ลองตามลำดับอัตโนมัติ) —';
+        modelSelect.appendChild(autoOpt);
+        GEMINI_MODEL_CANDIDATES.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          modelSelect.appendChild(opt);
+        });
+        if (savedModel && !GEMINI_MODEL_CANDIDATES.includes(savedModel)) {
+          const opt = document.createElement('option');
+          opt.value = savedModel;
+          opt.textContent = savedModel + ' (บันทึกไว้)';
+          modelSelect.appendChild(opt);
+        }
+        modelSelect.value = savedModel;
         page.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
         isAdminMode = true;
@@ -1054,7 +1095,9 @@
 
     // Remove Machine
     function removeMachine(machineId, event) {
-      event.stopPropagation();
+      if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+      }
       if (state.machines.length <= 1) {
         showToast("ต้องมีเครื่องจักรอย่างน้อย 1 เครื่องในระบบ", "error");
         return;
@@ -1073,41 +1116,67 @@
       }
     }
 
-    // Render Navigation Tabs
+    // Render Machine Selection Listbox (single listbox for all machines)
     function renderTabs() {
-      const container = document.getElementById('machineTabsContainer');
-      let html = '';
+      const selectElem = document.getElementById('machineSelectList');
+      if (!selectElem) return;
 
       const isSummaryActive = state.activeTab === 'summary';
-      html += `
-        <button onclick="switchTab('summary')" class="px-3.5 py-2 rounded-xl font-bold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-sm border ${
-          isSummaryActive
-            ? 'bg-gradient-to-r from-sky-500 to-brand-500 text-white border-sky-400'
-            : 'bg-slate-950/60 hover:bg-slate-800 text-slate-300 border-slate-800'
-        }">
-          <i class="fa-solid fa-chart-pie"></i> แดชบอร์ดสรุปผลรวม (${state.machines.length})
-        </button>
-      `;
 
+      // listbox มีเฉพาะรายชื่อเครื่อง (แดชบอร์ดแยกเป็นปุ่มต่างหาก)
+      let html = '<option value="" disabled selected>-- เลือก Machine No. --</option>';
       state.machines.forEach(m => {
-        const isActive = state.activeTab === m.id;
-        html += `
-          <div onclick="switchTab('${m.id}')" class="group relative px-3.5 py-2 rounded-xl font-semibold text-xs cursor-pointer transition flex items-center gap-2 whitespace-nowrap shadow-sm border ${
-            isActive
-              ? 'bg-sky-600/30 text-sky-300 border-sky-500/50'
-              : 'bg-slate-950/60 hover:bg-slate-800 text-slate-300 border-slate-800'
-          }">
-            <i class="fa-solid fa-gears ${isActive ? 'text-sky-400' : 'text-slate-400'}"></i>
-            <span>${escapeHtml(m.name)}</span>
-            <button onclick="removeMachine('${m.id}', event)" class="ml-1 opacity-0 group-hover:opacity-100 hover:text-rose-400 text-slate-500 transition" title="ลบเครื่องนี้">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
-        `;
+        html += `<option value="${m.id}">⚙️ ${escapeHtml(m.name)}${(!isSummaryActive && state.activeTab === m.id) ? ' ★ กำลังดูอยู่' : ''}</option>`;
       });
+      selectElem.innerHTML = html;
 
-      container.innerHTML = html;
+      // ให้ค่าที่โชว์ใน listbox ตรงกับเครื่องที่กำลังดู (ถ้าอยู่หน้าแดชบอร์ดจะโชว์ข้อความว่าง)
+      const validValues = state.machines.map(m => m.id);
+      if (isSummaryActive || !validValues.includes(state.activeTab)) {
+        selectElem.value = '';
+        if (!isSummaryActive) {
+          state.activeTab = 'summary';
+        }
+      } else {
+        selectElem.value = state.activeTab;
+      }
+
+      // ปุ่มแดชบอร์ด: ไฮไลต์เมื่อกำลังอยู่หน้าสรุปผลรวม
+      const summaryBtn = document.getElementById('summaryDashboardBtn');
+      if (summaryBtn) {
+        summaryBtn.className = isSummaryActive
+          ? 'px-3.5 py-2 rounded-xl font-bold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-sm border shrink-0 bg-gradient-to-r from-sky-500 to-brand-500 text-white border-sky-400'
+          : 'px-3.5 py-2 rounded-xl font-bold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-sm border shrink-0 bg-slate-950/60 hover:bg-slate-800 text-slate-300 border-slate-800';
+      }
+
+      // แสดงปุ่มลบเฉพาะเมื่อกำลังดูเครื่องใดเครื่องหนึ่ง (ไม่ใช่หน้าสรุปรวม)
+      const removeBtn = document.getElementById('removeActiveMachineBtn');
+      if (removeBtn) {
+        removeBtn.classList.toggle('hidden', isSummaryActive);
+        if (!isSummaryActive) {
+          const activeMachine = state.machines.find(m => m.id === state.activeTab);
+          removeBtn.title = activeMachine ? `ลบเครื่องจักร "${activeMachine.name}"` : 'ลบเครื่องที่เลือกอยู่';
+        }
+      }
+
       populateDropdownSelector();
+    }
+
+    // เมื่อเลือกเครื่องจาก listbox ให้สลับไปหน้าเครื่องนั้นทันที
+    function onMachineSelectChange() {
+      const selectElem = document.getElementById('machineSelectList');
+      if (selectElem && selectElem.value) {
+        switchTab(selectElem.value);
+      }
+    }
+
+    // ลบเครื่องที่กำลังเลือกอยู่ใน listbox
+    function removeActiveMachine() {
+      if (state.activeTab === 'summary') {
+        showToast("หน้าแดชบอร์ดสรุปผลรวมไม่สามารถลบได้ กรุณาเลือกเครื่องที่ต้องการลบก่อน", "info");
+        return;
+      }
+      removeMachine(state.activeTab);
     }
 
     // Router
